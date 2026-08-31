@@ -1,59 +1,62 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 
-const CATALOG_PATH = path.join(process.cwd(), "data", "market-catalog.json");
+const API_KEY = process.env.FINNHUB_API_KEY;
+const BASE_URL = "https://finnhub.io/api/v1";
 
-type MarketCatalogItem = {
-  symbol: string;
-  name?: string;
+type FinnhubSearchResult = {
+  description?: string;
+  displaySymbol?: string;
+  symbol?: string;
+  type?: string;
   exchange?: string;
   currency?: string;
 };
 
-async function readCatalog(): Promise<MarketCatalogItem[]> {
-  try {
-    const content = await fs.readFile(CATALOG_PATH, "utf8");
-    const parsed = JSON.parse(content) as { items?: MarketCatalogItem[] };
-    return Array.isArray(parsed.items) ? parsed.items : [];
-  } catch {
+async function proxySearch(query: string, exchange?: string) {
+  if (!API_KEY) {
     return [];
   }
+
+  const url = new URL(`${BASE_URL}/search`);
+  url.searchParams.set("q", query);
+  if (exchange) {
+    url.searchParams.set("exchange", exchange);
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      "X-Finnhub-Token": API_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const payload = (await response.json()) as { result?: FinnhubSearchResult[] };
+  return Array.isArray(payload.result) ? payload.result : [];
 }
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const query = (searchParams.get("query") ?? "").trim().toLowerCase();
+  const query = (searchParams.get("query") ?? searchParams.get("q") ?? "").trim();
+  const exchange = searchParams.get("exchange") ?? undefined;
 
   if (!query || query.length < 2) {
     return NextResponse.json({ data: [] });
   }
 
-  const catalog = await readCatalog();
-  const seen = new Set<string>();
-
-  const result = catalog
-    .filter((item) => {
-      const symbol = (item.symbol ?? "").toLowerCase();
-      const name = (item.name ?? "").toLowerCase();
-      const haystack = `${symbol} ${name}`;
-      return haystack.includes(query);
-    })
-    .filter((item) => {
-      const key = (item.symbol ?? "").trim().toUpperCase();
-      if (!key || seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 20)
+  const result = await proxySearch(query, exchange);
+  const normalized = result
+    .filter((item) => item?.symbol)
     .map((item) => ({
       symbol: item.symbol,
-      name: item.name ?? item.symbol,
-      exchange: item.exchange,
-      currency: item.currency,
-    }));
+      name: item.description ?? item.displaySymbol ?? item.symbol,
+      exchange: item.exchange ?? (item.type ? "US" : undefined),
+      currency: item.currency ?? "USD",
+      type: item.type,
+    }))
+    .slice(0, 20);
 
-  return NextResponse.json({ data: result });
+  return NextResponse.json({ data: normalized });
 }

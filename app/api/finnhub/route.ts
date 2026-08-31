@@ -280,6 +280,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(payload.filter(Boolean), { status: 200 });
     }
 
+    if (type === "search") {
+      const q = searchParams.get("q") ?? "";
+      const exchange = searchParams.get("exchange") ?? undefined;
+
+      if (!q) {
+        return NextResponse.json({ error: "Missing q." }, { status: 400 });
+      }
+
+      const result = await proxyFinnhub("/search", { q, exchange });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
+    if (type === "stock-symbol") {
+      const exchange = searchParams.get("exchange") ?? undefined;
+      const mic = searchParams.get("mic") ?? undefined;
+      const securityType = searchParams.get("securityType") ?? undefined;
+      const currency = searchParams.get("currency") ?? undefined;
+
+      if (!exchange) {
+        return NextResponse.json(
+          { error: "Missing exchange." },
+          { status: 400 },
+        );
+      }
+
+      const result = await proxyFinnhub("/stock/symbol", {
+        exchange,
+        mic,
+        securityType,
+        currency,
+      });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
     if (type === "profile") {
       if (!symbol) {
         return NextResponse.json({ error: "Missing symbol." }, { status: 400 });
