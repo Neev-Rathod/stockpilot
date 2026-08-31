@@ -34,16 +34,22 @@ export default function StockDetailPage() {
     refetchInterval: 5000,
   });
 
-  function handleConfirm(quantity: number) {
+  function handleConfirm(
+    quantity: number,
+    orderType: string,
+    executionType: string,
+  ) {
     if (!quote) return;
     if (modal?.type === "buy") {
       const res = buyStock(symbol, quote.companyName, quantity, quote.price);
-      if (res.success) toast.success(res.message);
+      if (res.success)
+        toast.success(`${res.message} · ${orderType} · ${executionType}`);
       else toast.error(res.message);
     }
     if (modal?.type === "sell") {
       const res = sellStock(symbol, quantity, quote.price);
-      if (res.success) toast.success(res.message);
+      if (res.success)
+        toast.success(`${res.message} · ${orderType} · ${executionType}`);
       else toast.error(res.message);
     }
     setModal(null);

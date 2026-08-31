@@ -20,9 +20,15 @@ import { BuySellModal } from "@/components/portfolio/buy-sell-modal";
 import { toast } from "sonner";
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"portfolio" | "watchlist" | "favorites">("portfolio");
+  const [activeTab, setActiveTab] = useState<
+    "portfolio" | "watchlist" | "favorites"
+  >("portfolio");
   const [selectedChartSymbol, setSelectedChartSymbol] = useState("AAPL");
-  const [modal, setModal] = useState<{ type: "buy" | "sell"; symbol: string; price: number } | null>(null);
+  const [modal, setModal] = useState<{
+    type: "buy" | "sell";
+    symbol: string;
+    price: number;
+  } | null>(null);
 
   // Live Market Ticker Engine: 1-Second Price Ticks & 30-Second API Fetching
   const { quotes, priceMap } = useMarketTicker();
@@ -37,33 +43,47 @@ export default function HomePage() {
   const portfolioValue = useMemo(
     () =>
       holdings.reduce((sum, holding) => {
-        const currentPrice = priceMap[holding.symbol] ?? holding.averageBuyPrice;
+        const currentPrice =
+          priceMap[holding.symbol] ?? holding.averageBuyPrice;
         return sum + currentPrice * holding.quantity;
       }, 0),
-    [holdings, priceMap]
+    [holdings, priceMap],
   );
 
   const totalInvestment = holdings.reduce(
     (sum, holding) => sum + holding.averageBuyPrice * holding.quantity,
-    0
+    0,
   );
   const pnl = portfolioValue - totalInvestment;
   const returnPct = totalInvestment ? (pnl / totalInvestment) * 100 : 0;
 
-  function handleConfirmTrade(quantity: number) {
+  function handleConfirmTrade(
+    quantity: number,
+    orderType: string,
+    executionType: string,
+  ) {
     if (!modal) return;
     if (modal.type === "buy") {
       const res = buyStock(modal.symbol, modal.symbol, quantity, modal.price);
-      if (res.success) toast.success(res.message); else toast.error(res.message);
+      if (res.success) {
+        toast.success(`${res.message} · ${orderType} · ${executionType}`);
+      } else {
+        toast.error(res.message);
+      }
     }
     if (modal.type === "sell") {
       const res = sellStock(modal.symbol, quantity, modal.price);
-      if (res.success) toast.success(res.message); else toast.error(res.message);
+      if (res.success) {
+        toast.success(`${res.message} · ${orderType} · ${executionType}`);
+      } else {
+        toast.error(res.message);
+      }
     }
     setModal(null);
   }
 
-  const activeQuote = quotes.find((q) => q.symbol === selectedChartSymbol) ?? quotes[0];
+  const activeQuote =
+    quotes.find((q) => q.symbol === selectedChartSymbol) ?? quotes[0];
 
   return (
     <div className="space-y-8 pb-12">
@@ -83,19 +103,31 @@ export default function HomePage() {
         {quotes.slice(0, 4).map((stock, idx) => {
           const positive = stock.percentChange >= 0;
           return (
-            <div key={idx} className="dark-card p-4 flex flex-col justify-between">
+            <div
+              key={idx}
+              className="dark-card p-4 flex flex-col justify-between"
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#22171c] text-red-500 font-bold text-xs font-mono">
                     {stock.symbol.slice(0, 2)}
                   </div>
-                  <span className="font-bold text-sm text-white">{stock.companyName || stock.symbol}</span>
+                  <span className="font-bold text-sm text-white">
+                    {stock.companyName || stock.symbol}
+                  </span>
                 </div>
 
                 <div className="h-6 w-16">
-                  <svg viewBox="0 0 60 20" className="h-full w-full overflow-visible">
+                  <svg
+                    viewBox="0 0 60 20"
+                    className="h-full w-full overflow-visible"
+                  >
                     <path
-                      d={positive ? "M0,15 Q15,5 30,12 T60,2" : "M0,2 Q15,12 30,5 T60,18"}
+                      d={
+                        positive
+                          ? "M0,15 Q15,5 30,12 T60,2"
+                          : "M0,2 Q15,12 30,5 T60,18"
+                      }
                       fill="none"
                       stroke={positive ? "#22c55e" : "#ef4444"}
                       strokeWidth="2"
@@ -106,14 +138,27 @@ export default function HomePage() {
 
               <div className="mt-4 pt-3 border-t border-[#1e2027] flex items-center justify-between text-xs font-mono">
                 <div>
-                  <div className="text-[10px] text-slate-400 font-sans">Total Share</div>
-                  <div className={positive ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
-                    {positive ? "+" : ""}{stock.percentChange.toFixed(2)}% ▲
+                  <div className="text-[10px] text-slate-400 font-sans">
+                    Total Share
+                  </div>
+                  <div
+                    className={
+                      positive
+                        ? "text-emerald-400 font-bold"
+                        : "text-red-400 font-bold"
+                    }
+                  >
+                    {positive ? "+" : ""}
+                    {stock.percentChange.toFixed(2)}% ▲
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[10px] text-slate-400 font-sans">Live Price</div>
-                  <div className="text-white font-bold">${stock.price.toFixed(2)}</div>
+                  <div className="text-[10px] text-slate-400 font-sans">
+                    Live Price
+                  </div>
+                  <div className="text-white font-bold">
+                    ${stock.price.toFixed(2)}
+                  </div>
                 </div>
               </div>
             </div>
@@ -167,8 +212,18 @@ export default function HomePage() {
 
           {/* Quick Metrics Badge */}
           <div className="flex items-center gap-4 text-xs font-mono">
-            <div><span className="text-slate-400">Cash:</span> <strong className="text-white">${virtualBalance.toFixed(2)}</strong></div>
-            <div><span className="text-slate-400">Portfolio:</span> <strong className="text-emerald-400">${portfolioValue.toFixed(2)}</strong></div>
+            <div>
+              <span className="text-slate-400">Cash:</span>{" "}
+              <strong className="text-white">
+                ${virtualBalance.toFixed(2)}
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400">Portfolio:</span>{" "}
+              <strong className="text-emerald-400">
+                ${portfolioValue.toFixed(2)}
+              </strong>
+            </div>
           </div>
         </div>
 
@@ -177,7 +232,9 @@ export default function HomePage() {
           <div className="grid gap-6 lg:grid-cols-[1.5fr_0.8fr]">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">Your Holdings</h3>
+                <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                  Your Holdings
+                </h3>
               </div>
 
               <div className="overflow-x-auto">
@@ -196,41 +253,71 @@ export default function HomePage() {
                   <tbody className="divide-y divide-[#181921] font-mono">
                     {holdings.length > 0 ? (
                       holdings.map((holding) => {
-                        const current = priceMap[holding.symbol] ?? holding.averageBuyPrice;
+                        const current =
+                          priceMap[holding.symbol] ?? holding.averageBuyPrice;
                         const value = current * holding.quantity;
-                        const gain = value - holding.averageBuyPrice * holding.quantity;
+                        const gain =
+                          value - holding.averageBuyPrice * holding.quantity;
                         const isPositive = gain >= 0;
 
                         return (
-                          <tr key={holding.symbol} className="hover:bg-[#181921] transition-colors">
+                          <tr
+                            key={holding.symbol}
+                            className="hover:bg-[#181921] transition-colors"
+                          >
                             <td className="py-3 px-3 font-bold font-mono text-white">
                               <button
                                 type="button"
-                                onClick={() => setSelectedChartSymbol(holding.symbol)}
+                                onClick={() =>
+                                  setSelectedChartSymbol(holding.symbol)
+                                }
                                 className="text-white hover:text-blue-400 text-left font-bold"
                               >
                                 {holding.symbol}
                               </button>
                             </td>
-                            <td className="py-3 px-3 text-slate-200">{holding.quantity}</td>
-                            <td className="py-3 px-3 text-slate-400">${holding.averageBuyPrice.toFixed(2)}</td>
-                            <td className="py-3 px-3 text-white font-bold">${current.toFixed(2)}</td>
-                            <td className="py-3 px-3 text-white font-bold">${value.toFixed(2)}</td>
-                            <td className={`py-3 px-3 font-bold ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
-                              {isPositive ? "+" : "-"}${Math.abs(gain).toFixed(2)}
+                            <td className="py-3 px-3 text-slate-200">
+                              {holding.quantity}
+                            </td>
+                            <td className="py-3 px-3 text-slate-400">
+                              ${holding.averageBuyPrice.toFixed(2)}
+                            </td>
+                            <td className="py-3 px-3 text-white font-bold">
+                              ${current.toFixed(2)}
+                            </td>
+                            <td className="py-3 px-3 text-white font-bold">
+                              ${value.toFixed(2)}
+                            </td>
+                            <td
+                              className={`py-3 px-3 font-bold ${isPositive ? "text-emerald-400" : "text-red-400"}`}
+                            >
+                              {isPositive ? "+" : "-"}$
+                              {Math.abs(gain).toFixed(2)}
                             </td>
                             <td className="py-3 px-3 text-right">
                               <div className="flex justify-end gap-1.5 font-sans">
                                 <button
                                   type="button"
-                                  onClick={() => setModal({ type: "buy", symbol: holding.symbol, price: current })}
+                                  onClick={() =>
+                                    setModal({
+                                      type: "buy",
+                                      symbol: holding.symbol,
+                                      price: current,
+                                    })
+                                  }
                                   className="rounded bg-emerald-950/60 px-2 py-1 text-[10px] font-bold text-emerald-400 hover:bg-emerald-900"
                                 >
                                   + Buy
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setModal({ type: "sell", symbol: holding.symbol, price: current })}
+                                  onClick={() =>
+                                    setModal({
+                                      type: "sell",
+                                      symbol: holding.symbol,
+                                      price: current,
+                                    })
+                                  }
                                   className="rounded bg-red-950/60 px-2 py-1 text-[10px] font-bold text-red-400 hover:bg-red-900"
                                 >
                                   - Sell
@@ -242,8 +329,12 @@ export default function HomePage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-500 font-sans">
-                          No active holdings. Explore stocks in the Watchlist tab to buy virtual shares.
+                        <td
+                          colSpan={7}
+                          className="py-8 text-center text-slate-500 font-sans"
+                        >
+                          No active holdings. Explore stocks in the Watchlist
+                          tab to buy virtual shares.
                         </td>
                       </tr>
                     )}
@@ -255,7 +346,9 @@ export default function HomePage() {
             {/* Allocation Chart & Audit Trail */}
             <div className="space-y-4">
               <div className="rounded-xl border border-[#1e2027] bg-[#0d0e12] p-4">
-                <div className="text-xs font-bold text-white mb-2">Portfolio Asset Allocation</div>
+                <div className="text-xs font-bold text-white mb-2">
+                  Portfolio Asset Allocation
+                </div>
                 <PortfolioAllocation holdings={holdings} prices={priceMap} />
               </div>
 
@@ -266,10 +359,17 @@ export default function HomePage() {
                 </div>
                 {transactions.length > 0 ? (
                   transactions.slice(0, 4).map((tx) => (
-                    <div key={tx.id} className="flex items-center justify-between text-xs py-1.5 border-b border-[#181921] last:border-0">
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between text-xs py-1.5 border-b border-[#181921] last:border-0"
+                    >
                       <div>
-                        <span className="font-bold text-white">{tx.symbol}</span>
-                        <span className={`ml-2 text-[10px] ${tx.type === "buy" ? "text-emerald-400" : "text-red-400"}`}>
+                        <span className="font-bold text-white">
+                          {tx.symbol}
+                        </span>
+                        <span
+                          className={`ml-2 text-[10px] ${tx.type === "buy" ? "text-emerald-400" : "text-red-400"}`}
+                        >
                           {tx.type.toUpperCase()}
                         </span>
                       </div>
@@ -279,7 +379,9 @@ export default function HomePage() {
                     </div>
                   ))
                 ) : (
-                  <div className="text-slate-500 text-[10px] font-sans">No recent transactions.</div>
+                  <div className="text-slate-500 text-[10px] font-sans">
+                    No recent transactions.
+                  </div>
                 )}
               </div>
             </div>
@@ -290,7 +392,9 @@ export default function HomePage() {
         {activeTab === "watchlist" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">Live Market Tickers (Updating 1s)</h3>
+              <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                Live Market Tickers (Updating 1s)
+              </h3>
             </div>
 
             <div className="overflow-x-auto">
@@ -310,7 +414,10 @@ export default function HomePage() {
                   {quotes.map((stock) => {
                     const positive = stock.percentChange >= 0;
                     return (
-                      <tr key={stock.symbol} className="hover:bg-[#181921] transition-colors">
+                      <tr
+                        key={stock.symbol}
+                        className="hover:bg-[#181921] transition-colors"
+                      >
                         <td className="py-3.5 px-4 font-sans">
                           <div className="flex items-center gap-3">
                             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-950/40 text-blue-400 text-xs font-bold font-mono">
@@ -319,21 +426,34 @@ export default function HomePage() {
                             <div>
                               <button
                                 type="button"
-                                onClick={() => setSelectedChartSymbol(stock.symbol)}
+                                onClick={() =>
+                                  setSelectedChartSymbol(stock.symbol)
+                                }
                                 className="font-bold text-white hover:text-blue-400 text-left font-mono"
                               >
                                 {stock.symbol}
                               </button>
-                              <div className="text-[10px] text-slate-400">{stock.companyName}</div>
+                              <div className="text-[10px] text-slate-400">
+                                {stock.companyName}
+                              </div>
                             </div>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 text-white font-bold">${stock.price.toFixed(2)}</td>
-                        <td className={`py-3.5 px-4 font-bold ${positive ? "text-emerald-400" : "text-red-400"}`}>
-                          {positive ? "+" : ""}{stock.percentChange.toFixed(2)}%
+                        <td className="py-3.5 px-4 text-white font-bold">
+                          ${stock.price.toFixed(2)}
                         </td>
-                        <td className="py-3.5 px-4 text-slate-300">${(stock.high ?? stock.price).toFixed(2)}</td>
-                        <td className="py-3.5 px-4 text-slate-300">${(stock.low ?? stock.price).toFixed(2)}</td>
+                        <td
+                          className={`py-3.5 px-4 font-bold ${positive ? "text-emerald-400" : "text-red-400"}`}
+                        >
+                          {positive ? "+" : ""}
+                          {stock.percentChange.toFixed(2)}%
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-300">
+                          ${(stock.high ?? stock.price).toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-300">
+                          ${(stock.low ?? stock.price).toFixed(2)}
+                        </td>
                         <td className="py-3.5 px-4 text-center">
                           <button
                             type="button"
@@ -346,7 +466,13 @@ export default function HomePage() {
                         <td className="py-3.5 px-4 text-right font-sans">
                           <button
                             type="button"
-                            onClick={() => setModal({ type: "buy", symbol: stock.symbol, price: stock.price })}
+                            onClick={() =>
+                              setModal({
+                                type: "buy",
+                                symbol: stock.symbol,
+                                price: stock.price,
+                              })
+                            }
                             className="btn-blue px-3.5 py-1 text-xs"
                           >
                             Trade
@@ -367,15 +493,22 @@ export default function HomePage() {
             {quotes.slice(0, 6).map((stock) => {
               const positive = stock.percentChange >= 0;
               return (
-                <div key={stock.symbol} className="rounded-xl border border-[#1e2027] bg-[#0d0e12] p-4 flex flex-col justify-between space-y-4">
+                <div
+                  key={stock.symbol}
+                  className="rounded-xl border border-[#1e2027] bg-[#0d0e12] p-4 flex flex-col justify-between space-y-4"
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-950/40 text-blue-400 font-bold font-mono">
                         {stock.symbol.slice(0, 2)}
                       </div>
                       <div>
-                        <div className="font-bold text-sm text-white font-mono">{stock.symbol}</div>
-                        <div className="text-[10px] text-slate-400">{stock.companyName}</div>
+                        <div className="font-bold text-sm text-white font-mono">
+                          {stock.symbol}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {stock.companyName}
+                        </div>
                       </div>
                     </div>
                     <button
@@ -388,9 +521,14 @@ export default function HomePage() {
                   </div>
 
                   <div className="flex items-baseline justify-between font-mono">
-                    <div className="text-xl font-bold text-white">${stock.price.toFixed(2)}</div>
-                    <div className={`text-xs font-bold ${positive ? "text-emerald-400" : "text-red-400"}`}>
-                      {positive ? "+" : ""}{stock.percentChange.toFixed(2)}%
+                    <div className="text-xl font-bold text-white">
+                      ${stock.price.toFixed(2)}
+                    </div>
+                    <div
+                      className={`text-xs font-bold ${positive ? "text-emerald-400" : "text-red-400"}`}
+                    >
+                      {positive ? "+" : ""}
+                      {stock.percentChange.toFixed(2)}%
                     </div>
                   </div>
 
@@ -404,7 +542,13 @@ export default function HomePage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setModal({ type: "buy", symbol: stock.symbol, price: stock.price })}
+                      onClick={() =>
+                        setModal({
+                          type: "buy",
+                          symbol: stock.symbol,
+                          price: stock.price,
+                        })
+                      }
                       className="flex-1 btn-blue py-1.5 text-xs font-sans"
                     >
                       Buy Now
@@ -422,7 +566,10 @@ export default function HomePage() {
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
             <BarChart2 className="h-4 w-4 text-blue-500" />
-            Restored TradingView Candlestick Pro Chart: <span className="text-blue-400 font-mono">{selectedChartSymbol}</span>
+            Restored TradingView Candlestick Pro Chart:{" "}
+            <span className="text-blue-400 font-mono">
+              {selectedChartSymbol}
+            </span>
           </h2>
           <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
             <span>Ticker Switcher:</span>
@@ -432,7 +579,9 @@ export default function HomePage() {
                 type="button"
                 onClick={() => setSelectedChartSymbol(sym)}
                 className={`px-2 py-0.5 rounded ${
-                  selectedChartSymbol === sym ? "bg-white text-[#0d0e12] font-bold" : "hover:text-white"
+                  selectedChartSymbol === sym
+                    ? "bg-white text-[#0d0e12] font-bold"
+                    : "hover:text-white"
                 }`}
               >
                 {sym}
