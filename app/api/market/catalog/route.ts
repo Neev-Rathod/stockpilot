@@ -9,8 +9,6 @@ type MarketCatalogItem = {
   name?: string;
   exchange?: string;
   currency?: string;
-  type?: string;
-  marketType?: string;
 };
 
 async function readCatalog(): Promise<MarketCatalogItem[]> {
@@ -32,6 +30,8 @@ export async function GET(request: NextRequest) {
   }
 
   const catalog = await readCatalog();
+  const seen = new Set<string>();
+
   const result = catalog
     .filter((item) => {
       const symbol = (item.symbol ?? "").toLowerCase();
@@ -39,13 +39,20 @@ export async function GET(request: NextRequest) {
       const haystack = `${symbol} ${name}`;
       return haystack.includes(query);
     })
+    .filter((item) => {
+      const key = (item.symbol ?? "").trim().toUpperCase();
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
     .slice(0, 20)
     .map((item) => ({
       symbol: item.symbol,
       name: item.name ?? item.symbol,
       exchange: item.exchange,
       currency: item.currency,
-      type: item.type ?? item.marketType,
     }));
 
   return NextResponse.json({ data: result });

@@ -11,10 +11,27 @@ const requestLog: Array<{
   responseStatus: number;
   durationMs: number;
   success: boolean;
+  responseData?: unknown;
 }> = [];
 
 const endpointCounts = new Map<string, number>();
 const symbolCounts = new Map<string, number>();
+
+function formatResponseData(payload: unknown): string {
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  if (payload === undefined) {
+    return "null";
+  }
+
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
+  }
+}
 
 function recordCall({
   endpoint,
@@ -23,6 +40,7 @@ function recordCall({
   responseStatus,
   durationMs,
   success,
+  responseData,
 }: {
   endpoint: string;
   path: string;
@@ -30,6 +48,7 @@ function recordCall({
   responseStatus: number;
   durationMs: number;
   success: boolean;
+  responseData?: unknown;
 }) {
   requestLog.push({
     timestamp: new Date().toISOString(),
@@ -39,6 +58,7 @@ function recordCall({
     responseStatus,
     durationMs,
     success,
+    responseData,
   });
 
   endpointCounts.set(endpoint, (endpointCounts.get(endpoint) ?? 0) + 1);
@@ -104,6 +124,7 @@ async function proxyFinnhub(
       responseStatus: response.status,
       durationMs,
       success: response.ok,
+      responseData: payload,
     });
 
     if (!response.ok) {
@@ -132,6 +153,12 @@ async function proxyFinnhub(
       responseStatus: 500,
       durationMs,
       success: false,
+      responseData: {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unexpected Finnhub request error.",
+      },
     });
 
     return {

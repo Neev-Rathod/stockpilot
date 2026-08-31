@@ -20,6 +20,7 @@ type AdminCall = {
   responseStatus: number;
   durationMs: number;
   success: boolean;
+  responseData?: unknown;
 };
 
 type AvailableApi = {
@@ -233,32 +234,50 @@ export default function AdminPage() {
                     <th className="py-2 pr-4">Symbol</th>
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Latency</th>
+                    <th className="py-2 pr-4">Response</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#181921] font-mono">
                   {stats.recentCalls.length > 0 ? (
-                    stats.recentCalls.map((call, index) => (
-                      <tr
-                        key={`${call.timestamp}-${index}`}
-                        className="text-slate-300"
-                      >
-                        <td className="py-2 pr-4">
-                          {new Date(call.timestamp).toLocaleTimeString()}
-                        </td>
-                        <td className="py-2 pr-4">{call.endpoint}</td>
-                        <td className="py-2 pr-4">{call.symbol ?? "—"}</td>
-                        <td
-                          className={`py-2 pr-4 ${call.success ? "text-emerald-400" : "text-red-400"}`}
+                    stats.recentCalls.map((call, index) => {
+                      const responseJson =
+                        call.responseData === undefined
+                          ? "null"
+                          : JSON.stringify(call.responseData, null, 2);
+
+                      return (
+                        <tr
+                          key={`${call.timestamp}-${index}`}
+                          className="align-top text-slate-300"
                         >
-                          {call.success ? "OK" : "ERROR"}
-                        </td>
-                        <td className="py-2 pr-4">{call.durationMs} ms</td>
-                      </tr>
-                    ))
+                          <td className="py-2 pr-4">
+                            {new Date(call.timestamp).toLocaleTimeString()}
+                          </td>
+                          <td className="py-2 pr-4">{call.endpoint}</td>
+                          <td className="py-2 pr-4">{call.symbol ?? "—"}</td>
+                          <td
+                            className={`py-2 pr-4 ${call.success ? "text-emerald-400" : "text-red-400"}`}
+                          >
+                            {call.success ? "OK" : "ERROR"}
+                          </td>
+                          <td className="py-2 pr-4">{call.durationMs} ms</td>
+                          <td className="py-2 pr-4">
+                            <details className="group rounded-lg border border-[#1d1e26] bg-[#0d0f13] p-2">
+                              <summary className="cursor-pointer list-none text-xs font-semibold text-blue-300">
+                                View JSON
+                              </summary>
+                              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[#0a0b0f] p-3 text-[11px] leading-5 text-slate-200">
+                                {responseJson}
+                              </pre>
+                            </details>
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="py-6 text-center text-slate-500"
                       >
                         No requests have been tracked yet.
