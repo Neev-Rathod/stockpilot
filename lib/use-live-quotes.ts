@@ -8,12 +8,16 @@ const DEFAULT_REFRESH_MS = 30_000;
 const DEFAULT_TICK_MS = 1_000;
 
 function applyMicroDrift(base: MarketQuote, seed: number): MarketQuote {
-  const previousClose = base.previousClose ?? base.price;
-  const drift = Math.sin(Date.now() / 1000 + seed) * 0.0008;
-  const jitter = (Math.random() - 0.5) * 0.0006;
-  const nextPrice = Math.max(0.01, base.price * (1 + drift + jitter));
+  const previousClose = base.previousClose ?? (base.price > 0 ? base.price : 100);
+  
+  // Guarantee a distinct price tick every second (+/- 0.08%)
+  const direction = Math.sin(Date.now() / 1000 + seed * 1.7) >= 0 ? 1 : -1;
+  const step = (0.0003 + Math.random() * 0.0007) * (base.price || 100) * direction;
+  
+  const currentPrice = base.price || 100;
+  const nextPrice = Math.max(0.01, currentPrice + step);
   const change = Number((nextPrice - previousClose).toFixed(2));
-  const percentChange = previousClose
+  const percentChange = previousClose > 0
     ? Number((((nextPrice - previousClose) / previousClose) * 100).toFixed(2))
     : 0;
 
@@ -22,6 +26,8 @@ function applyMicroDrift(base: MarketQuote, seed: number): MarketQuote {
     price: Number(nextPrice.toFixed(2)),
     change,
     percentChange,
+    high: Math.max(base.high ?? nextPrice, nextPrice),
+    low: Math.min(base.low ?? nextPrice, nextPrice),
   };
 }
 
@@ -63,58 +69,23 @@ export function useLiveMarketQuotes(
 
   const [liveQuotes, setLiveQuotes] = useState<MarketQuote[]>([]);
   const baseQuoteRef = useRef<MarketQuote[]>([]);
-  const lastBaseSignatureRef = useRef("");
 
   useEffect(() => {
-    if (!fetchedQuotes.length) {
-      if (baseQuoteRef.current.length > 0 || lastBaseSignatureRef.current) {
-        baseQuoteRef.current = [];
-        lastBaseSignatureRef.current = "";
-        setLiveQuotes([]);
-      }
-      return;
-    }
-
-    const nextBase = fetchedQuotes.map((quote) => ({ ...quote }));
-    const baseSignature = nextBase
-      .map(
-        (quote) =>
-          `${quote.symbol}:${quote.price}:${quote.change ?? 0}:${quote.percentChange ?? 0}`,
-      )
-      .join("|");
-
-    if (baseSignature === lastBaseSignatureRef.current) {
-      return;
-    }
-
-    lastBaseSignatureRef.current = baseSignature;
-    baseQuoteRef.current = nextBase;
-    setLiveQuotes(nextBase);
+    if (!fetchedQuotes.length) return;
+    baseQuoteRef.current = fetchedQuotes.map((quote) => ({ ...quote }));
+    setLiveQuotes(fetchedQuotes.map((quote) => ({ ...quote })));
   }, [fetchedQuotes]);
 
+  // Universal 1-Second Live Price Ticker
   useEffect(() => {
-    if (!baseQuoteRef.current.length) {
-      return;
-    }
-
     const timer = window.setInterval(() => {
-      setLiveQuotes((current) => {
-        const activeBase = current.length > 0 ? current : baseQuoteRef.current;
-        const currentMap = new Map(
-          activeBase.map((quote) => [quote.symbol, quote]),
-        );
+      setLiveQuotes((currentQuotes) => {
+        if (!currentQuotes.length && !baseQuoteRef.current.length) return currentQuotes;
 
-        return baseQuoteRef.current.map((baseQuote, index) => {
-          const currentQuote = currentMap.get(baseQuote.symbol) ?? baseQuote;
-          const nextQuote = applyMicroDrift(
-            currentQuote,
-            index + Date.now() / 1000,
-          );
-          return {
-            ...baseQuote,
-            ...nextQuote,
-            price: Number(nextQuote.price.toFixed(2)),
-          };
+        const sourceList = currentQuotes.length > 0 ? currentQuotes : baseQuoteRef.current;
+
+        return sourceList.map((quote, index) => {
+          return applyMicroDrift(quote, index);
         });
       });
     }, tickMs);
