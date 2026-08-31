@@ -39,7 +39,11 @@ async function proxySearch(query: string, exchange?: string) {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const query = (searchParams.get("query") ?? searchParams.get("q") ?? "").trim();
+  const query = (
+    searchParams.get("query") ??
+    searchParams.get("q") ??
+    ""
+  ).trim();
   const exchange = searchParams.get("exchange") ?? undefined;
 
   if (!query || query.length < 2) {
