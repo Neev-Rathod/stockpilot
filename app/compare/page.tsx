@@ -200,10 +200,10 @@ export default function ComparePage() {
         <div className="glass-panel rounded-3xl p-6">
           <div className="mb-4 text-base font-bold text-white flex items-center gap-2">
             <Layers className="h-4 w-4 text-blue-400" />
-            Normalized Relative Growth (%)
+            TradingView Technical Chart & Comparison Engine
           </div>
-          {selected.length >= 2 && queryResults.data ? (
-            <ComparisonChart series={queryResults.data} range={range} />
+          {selected.length >= 1 ? (
+            <ComparisonChart symbols={selected} series={queryResults.data ?? []} range={range} />
           ) : (
             <div className="flex h-80 flex-col items-center justify-center rounded-2xl bg-slate-950/60 border border-white/[0.06] text-slate-400">
               {selected.length >= 2 ? (
