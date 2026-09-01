@@ -77,3 +77,106 @@ export interface ComparisonMetric {
   latest: number;
   start: number;
 }
+
+export interface PriceAlert {
+  id: string;
+  symbol: string;
+  targetPrice: number;
+  condition: "above" | "below";
+  createdAt: string;
+  triggered: boolean;
+}
+
+export type ChartPatternType =
+  | "head_and_shoulders"
+  | "inverse_head_and_shoulders"
+  | "abcd"
+  | "xabcd"
+  | "cypher"
+  | "triangle_ascending"
+  | "triangle_descending"
+  | "triangle_symmetrical"
+  | "three_drives"
+  | "double_top"
+  | "double_bottom";
+
+export type ElliottWaveType =
+  | "impulse_12345"
+  | "correction_abc"
+  | "triangle_abcde"
+  | "double_combo_wxy"
+  | "triple_combo_wxyxz";
+
+export interface PatternPoint {
+  label: string;
+  priceLevel: number;
+  description: string;
+}
+
+export interface PatternResult {
+  symbol: string;
+  pattern: ChartPatternType;
+  confidence: number;
+  direction: "bullish" | "bearish" | "neutral";
+  description: string;
+  keyPoints: PatternPoint[];
+  projectedTarget: number | null;
+  stopLoss: number | null;
+  detectedAt: string;
+}
+
+export interface ElliottWaveResult {
+  symbol: string;
+  waveType: ElliottWaveType;
+  confidence: number;
+  currentWave: string;
+  description: string;
+  waves: PatternPoint[];
+  projectedTarget: number | null;
+  detectedAt: string;
+}
+
+export interface ScreenerCriteria {
+  minPrice?: number;
+  maxPrice?: number;
+  minMarketCap?: number;
+  maxPE?: number;
+  minPercentChange?: number;
+  maxPercentChange?: number;
+  sector?: string;
+  limit?: number;
+}
+
+export interface ScreenerResult {
+  symbol: string;
+  companyName: string;
+  price: number;
+  percentChange: number;
+  marketCap?: number;
+  sector?: string;
+  score: number;
+}
+
+export interface PortfolioRiskMetrics {
+  totalValue: number;
+  concentrationRisk: "low" | "medium" | "high";
+  topHoldingWeight: number;
+  diversificationScore: number;
+  estimatedBeta: number;
+  sectorExposure: Record<string, number>;
+  recommendation: string;
+}
+
+export interface BacktestResult {
+  symbol: string;
+  strategy: string;
+  startDate: string;
+  endDate: string;
+  totalReturn: number;
+  annualizedReturn: number;
+  maxDrawdown: number;
+  winRate: number;
+  totalTrades: number;
+  sharpeRatio: number;
+}
+

@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Holding, PortfolioState, Transaction } from "@/lib/types";
+import type { Holding, PortfolioState, Transaction, PriceAlert } from "@/lib/types";
+
 
 const DEFAULT_BALANCE = 100000;
 
 interface PortfolioStore extends PortfolioState {
   favorites: string[];
+  alerts: PriceAlert[];
   toggleFavorite: (symbol: string) => void;
   buyStock: (
     symbol: string,
@@ -19,7 +21,15 @@ interface PortfolioStore extends PortfolioState {
     price: number,
   ) => { success: boolean; message: string };
   resetPortfolio: () => void;
+  setAlert: (
+    symbol: string,
+    targetPrice: number,
+    condition: "above" | "below",
+  ) => { success: boolean; message: string; alert?: PriceAlert };
+  removeAlert: (id: string) => void;
+  getAlerts: () => PriceAlert[];
 }
+
 
 export const usePortfolioStore = create<PortfolioStore>()(
   persist(
@@ -28,6 +38,8 @@ export const usePortfolioStore = create<PortfolioStore>()(
       holdings: [],
       transactions: [],
       favorites: [],
+      alerts: [],
+
       toggleFavorite: (symbol) => {
         const cleaned = symbol.toUpperCase();
         const favorites = get().favorites;
@@ -155,6 +167,30 @@ export const usePortfolioStore = create<PortfolioStore>()(
           transactions: [],
         });
       },
+      setAlert: (symbol, targetPrice, condition) => {
+        const cleaned = symbol.toUpperCase();
+        if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+          return { success: false, message: "Invalid target price." };
+        }
+        const alert: PriceAlert = {
+          id: `alert-${cleaned}-${Date.now()}`,
+          symbol: cleaned,
+          targetPrice,
+          condition,
+          createdAt: new Date().toISOString(),
+          triggered: false,
+        };
+        set({ alerts: [...get().alerts, alert] });
+        return {
+          success: true,
+          message: `Alert set: notify when ${cleaned} goes ${condition} $${targetPrice.toFixed(2)}.`,
+          alert,
+        };
+      },
+      removeAlert: (id) => {
+        set({ alerts: get().alerts.filter((a) => a.id !== id) });
+      },
+      getAlerts: () => get().alerts,
     }),
     {
       name: "stockpilot-portfolio",
@@ -163,8 +199,10 @@ export const usePortfolioStore = create<PortfolioStore>()(
         holdings: state.holdings,
         transactions: state.transactions,
         favorites: state.favorites,
+        alerts: state.alerts,
       }),
     },
+
   ),
 );
 
