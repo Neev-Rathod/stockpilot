@@ -26,7 +26,12 @@ import {
   Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
-import { ComparisonChart } from "@/components/comparison/comparison-chart";
+import {
+  ComparisonChart,
+  type ChartStyle,
+  type Drawing,
+  type IndicatorState,
+} from "@/components/comparison/comparison-chart";
 import {
   getCompanyNews,
   getRecommendationTrends,
@@ -107,17 +112,113 @@ export function CompareDashboard() {
   const [selected, setSelected] = useState<string[]>(initialSymbols);
   const [range, setRange] = useState<StockRange>("1Y");
   const [normalized, setNormalized] = useState(false);
-  const [newsSymbol, setNewsSymbol] = useState("AAPL");
+  const [newsSymbol, setNewsSymbol] = useState(initialSymbols[0] || "AAPL");
+  const [chartStyle, setChartStyle] = useState<ChartStyle>("candles");
+  const [focusSymbol, setFocusSymbol] = useState<string>(initialSymbols[0] || "AAPL");
+  const [indicators, setIndicators] = useState<IndicatorState>({
+    sma20: false,
+    ema50: false,
+    bollinger: false,
+    volume: true,
+    rsi: false,
+    macd: false,
+  });
+  const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [showAiAnalysis, setShowAiAnalysis] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activePatternId, setActivePatternId] = useState<string | null>(null);
 
-  // Sync newsSymbol if selected list changes
+  // Sync newsSymbol & focusSymbol if selected list changes
   useEffect(() => {
     if (!selected.includes(newsSymbol) && selected[0]) {
       setNewsSymbol(selected[0]);
     }
-  }, [selected, newsSymbol]);
+    if (!selected.includes(focusSymbol) && selected[0]) {
+      setFocusSymbol(selected[0]);
+    }
+  }, [selected, newsSymbol, focusSymbol]);
+
+  // Unified WebMCP sync listener
+  useEffect(() => {
+    function handleSync(e: Event) {
+      const d = (e as CustomEvent).detail;
+      if (!d) return;
+
+      if (Array.isArray(d.symbols) && d.symbols.length > 0) {
+        const validSymbols = d.symbols
+          .map((s: string) => String(s).toUpperCase())
+          .filter((s: string) => COMPANIES.some(([c]) => c === s));
+        if (validSymbols.length > 0) {
+          setSelected(validSymbols.slice(0, 5));
+        }
+      }
+      if (d.range && RANGES.includes(d.range)) {
+        setRange(d.range);
+      }
+      if (typeof d.normalized === "boolean") {
+        setNormalized(d.normalized);
+      }
+      if (d.chartStyle) {
+        setChartStyle(d.chartStyle);
+      }
+      if (d.focusSymbol) {
+        const sym = String(d.focusSymbol).toUpperCase();
+        setFocusSymbol(sym);
+        setNewsSymbol(sym);
+      }
+      if (d.indicators) {
+        setIndicators((prev) => ({
+          ...prev,
+          sma20:
+            d.indicators.sma !== undefined
+              ? Boolean(d.indicators.sma)
+              : d.indicators.sma20 !== undefined
+              ? Boolean(d.indicators.sma20)
+              : prev.sma20,
+          ema50:
+            d.indicators.ema !== undefined
+              ? Boolean(d.indicators.ema)
+              : d.indicators.ema50 !== undefined
+              ? Boolean(d.indicators.ema50)
+              : prev.ema50,
+          bollinger:
+            d.indicators.bollinger !== undefined
+              ? Boolean(d.indicators.bollinger)
+              : prev.bollinger,
+          volume:
+            d.indicators.volume !== undefined
+              ? Boolean(d.indicators.volume)
+              : prev.volume,
+          rsi:
+            d.indicators.rsi !== undefined
+              ? Boolean(d.indicators.rsi)
+              : d.indicators.rsi14 !== undefined
+              ? Boolean(d.indicators.rsi14)
+              : prev.rsi,
+          macd:
+            d.indicators.macd !== undefined
+              ? Boolean(d.indicators.macd)
+              : prev.macd,
+        }));
+      }
+      if (d.clearDrawings) {
+        setDrawings([]);
+        setActivePatternId(null);
+      }
+      if (Array.isArray(d.drawings)) {
+        if (d.clearDrawings) {
+          setDrawings(d.drawings);
+        } else {
+          setDrawings((prev) => [...prev, ...d.drawings]);
+        }
+      }
+    }
+
+    window.addEventListener("stockpilot:compare:sync", handleSync);
+    return () => {
+      window.removeEventListener("stockpilot:compare:sync", handleSync);
+    };
+  }, []);
 
   // Load local OHLCV
   const history = useQuery({
@@ -253,6 +354,9 @@ export function CompareDashboard() {
   // Draw pattern directly onto the chart overlay canvas
   function applyPatternToCanvas(pattern: DetectedChartPattern) {
     setActivePatternId(pattern.id);
+    setFocusSymbol(pattern.symbol);
+    setChartStyle("candles");
+    setDrawings(pattern.drawings);
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
@@ -277,6 +381,9 @@ export function CompareDashboard() {
     if (!aiAnalysis?.detectedPatterns.length) return;
     const allDrawings = aiAnalysis.detectedPatterns.flatMap((p) => p.drawings);
     const targetSymbol = aiAnalysis.detectedPatterns[0].symbol;
+    setFocusSymbol(targetSymbol);
+    setChartStyle("candles");
+    setDrawings(allDrawings);
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(
@@ -300,6 +407,7 @@ export function CompareDashboard() {
 
   function clearCanvas() {
     setActivePatternId(null);
+    setDrawings([]);
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("stockpilot:compare-chart:clear-drawings"),
@@ -456,7 +564,18 @@ export function CompareDashboard() {
             Could not load the local OHLCV files.
           </div>
         ) : (
-          <ComparisonChart series={visibleSeries} normalized={normalized} />
+          <ComparisonChart
+            series={visibleSeries}
+            normalized={normalized}
+            chartStyle={chartStyle}
+            onChartStyleChange={setChartStyle}
+            focusSymbol={focusSymbol}
+            onFocusSymbolChange={setFocusSymbol}
+            indicators={indicators}
+            onIndicatorsChange={setIndicators}
+            drawings={drawings}
+            onDrawingsChange={setDrawings}
+          />
         )}
       </section>
 

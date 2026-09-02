@@ -103,7 +103,7 @@ export type ChartStyle = "candles" | "bars" | "line" | "area" | "compare" | "spl
 export type AnySeriesApi = ISeriesApi<SeriesType>;
 
 export interface RawPoint {
-  time: Time;
+  time: Time | string | number;
   price: number;
 }
 
@@ -269,26 +269,45 @@ function macd(candles: OhlcvCandle[], fast = 12, slow = 26, signalPeriod = 9) {
 /* Component                                                              */
 /* --------------------------------------------------------------------- */
 
+export interface IndicatorState {
+  sma20: boolean;
+  ema50: boolean;
+  bollinger: boolean;
+  volume: boolean;
+  rsi: boolean;
+  macd: boolean;
+}
+
 export interface ComparisonChartProps {
   series: OhlcvSeries[];
   normalized: boolean;
   externalDrawings?: Drawing[];
+  drawings?: Drawing[];
   onDrawingsChange?: (drawings: Drawing[]) => void;
   activeFocusSymbol?: string;
+  focusSymbol?: string;
   onFocusSymbolChange?: (symbol: string) => void;
   activeChartStyle?: ChartStyle;
+  chartStyle?: ChartStyle;
   onChartStyleChange?: (style: ChartStyle) => void;
+  indicators?: IndicatorState;
+  onIndicatorsChange?: (indicators: IndicatorState) => void;
 }
 
 export function ComparisonChart({
   series,
   normalized,
   externalDrawings,
+  drawings: controlledDrawings,
   onDrawingsChange,
   activeFocusSymbol,
+  focusSymbol: controlledFocusSymbol,
   onFocusSymbolChange,
   activeChartStyle,
+  chartStyle: controlledChartStyle,
   onChartStyleChange,
+  indicators: controlledIndicators,
+  onIndicatorsChange,
 }: ComparisonChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -306,37 +325,48 @@ export function ComparisonChart({
   >(new Map());
 
   const [chartStyle, setChartStyle] = useState<ChartStyle>(
-    activeChartStyle ?? "candles",
+    controlledChartStyle ?? activeChartStyle ?? "candles",
   );
   const [focusSymbol, setFocusSymbol] = useState<string | undefined>(
-    activeFocusSymbol ?? series[0]?.symbol,
+    controlledFocusSymbol ?? activeFocusSymbol ?? series[0]?.symbol,
   );
   const [tool, setTool] = useState<ToolId>("cursor");
   const [showStylePicker, setShowStylePicker] = useState(false);
   const [showPatternPicker, setShowPatternPicker] = useState(false);
   const [showIndicatorPicker, setShowIndicatorPicker] = useState(false);
-  const [indicators, setIndicators] = useState({
-    sma20: false,
-    ema50: false,
-    bollinger: false,
-    volume: true,
-    rsi: false,
-    macd: false,
-  });
-  const [drawings, setDrawings] = useState<Drawing[]>(externalDrawings ?? []);
+  const [indicators, setIndicators] = useState<IndicatorState>(
+    controlledIndicators ?? {
+      sma20: false,
+      ema50: false,
+      bollinger: false,
+      volume: true,
+      rsi: false,
+      macd: false,
+    },
+  );
+  const [drawings, setDrawings] = useState<Drawing[]>(
+    controlledDrawings ?? externalDrawings ?? [],
+  );
 
   // Sync external controlled props
   useEffect(() => {
-    if (activeFocusSymbol) setFocusSymbol(activeFocusSymbol);
-  }, [activeFocusSymbol]);
+    const sym = controlledFocusSymbol ?? activeFocusSymbol;
+    if (sym) setFocusSymbol(sym);
+  }, [controlledFocusSymbol, activeFocusSymbol]);
 
   useEffect(() => {
-    if (activeChartStyle) setChartStyle(activeChartStyle);
-  }, [activeChartStyle]);
+    const st = controlledChartStyle ?? activeChartStyle;
+    if (st) setChartStyle(st);
+  }, [controlledChartStyle, activeChartStyle]);
 
   useEffect(() => {
-    if (externalDrawings) setDrawings(externalDrawings);
-  }, [externalDrawings]);
+    const dr = controlledDrawings ?? externalDrawings;
+    if (dr) setDrawings(dr);
+  }, [controlledDrawings, externalDrawings]);
+
+  useEffect(() => {
+    if (controlledIndicators) setIndicators(controlledIndicators);
+  }, [controlledIndicators]);
 
   // Listen for WebMCP & AI custom events
   useEffect(() => {
@@ -530,7 +560,7 @@ export function ComparisonChart({
       const chart = chartRef.current;
       const s = refSeries();
       if (!chart || !s) return null;
-      const x = chart.timeScale().timeToCoordinate(p.time);
+      const x = chart.timeScale().timeToCoordinate(p.time as any);
       const y = s.priceToCoordinate(p.price);
       if (x === null || y === null) return null;
       return { x, y };
@@ -664,9 +694,9 @@ export function ComparisonChart({
         const p1 = d.points[1].price;
         const pct = ((p1 - p0) / p0) * 100;
         const t0 =
-          chartRef.current?.timeScale().timeToCoordinate(d.points[0].time) ?? 0;
+          chartRef.current?.timeScale().timeToCoordinate(d.points[0].time as any) ?? 0;
         const t1 =
-          chartRef.current?.timeScale().timeToCoordinate(d.points[1].time) ?? 0;
+          chartRef.current?.timeScale().timeToCoordinate(d.points[1].time as any) ?? 0;
         const bars = Math.abs(t1 - t0);
         ctx.fillStyle = pct >= 0 ? "#34d399" : "#f87171";
         ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y) - 20, 170, 18);
@@ -1443,12 +1473,14 @@ export function ComparisonChart({
                       type="checkbox"
                       disabled={disableIndicators}
                       checked={indicators[key]}
-                      onChange={() =>
-                        setIndicators((prev) => ({
-                          ...prev,
-                          [key]: !prev[key],
-                        }))
-                      }
+                      onChange={() => {
+                        const next = {
+                          ...indicators,
+                          [key]: !indicators[key],
+                        };
+                        setIndicators(next);
+                        onIndicatorsChange?.(next);
+                      }}
                       className="accent-blue-500"
                     />
                     {label}
