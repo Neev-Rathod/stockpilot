@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bookmark,
   CalendarRange,
+  FileText,
   LayoutGrid,
   Newspaper,
   ReceiptText,
@@ -20,6 +21,7 @@ const mainNavItems = [
   { label: "Orders", href: "/orders", icon: ReceiptText },
   { label: "News", href: "/news", icon: Newspaper },
   { label: "IPOs", href: "/ipos", icon: CalendarRange },
+  { label: "SEC Filings", href: "/sec-filings", icon: FileText },
 ];
 
 export function SiteHeader() {

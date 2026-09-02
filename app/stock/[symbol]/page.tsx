@@ -9,6 +9,7 @@ import { StockChart } from "@/components/stocks/stock-chart";
 import { BuySellModal } from "@/components/portfolio/buy-sell-modal";
 import { usePortfolioStore } from "@/lib/portfolio-store";
 import { getCompanyProfile } from "@/lib/finnhub/client";
+import { SECFilingsPanel } from "@/components/stocks/sec-filings-panel";
 import { toast } from "sonner";
 
 export default function StockDetailPage() {

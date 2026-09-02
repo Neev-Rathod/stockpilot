@@ -63,6 +63,17 @@ export interface FinnhubIpoItem {
   totalSharesValue?: number;
 }
 
+export interface SECFiling {
+  acceptedDate?: string;
+  accessNumber?: string;
+  cik?: string;
+  filedDate?: string;
+  filingUrl?: string;
+  form?: string;
+  reportUrl?: string;
+  symbol?: string;
+}
+
 async function finnhubRequest<T>(params: Record<string, string>): Promise<T> {
   const query = new URLSearchParams(params);
   const response = await fetch(`/api/finnhub?${query.toString()}`);
@@ -232,6 +243,34 @@ export async function getIPOCalendar(
       to,
     });
     return Array.isArray(result?.ipoCalendar) ? result.ipoCalendar : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getSECFilings(params: {
+  symbol?: string;
+  cik?: string;
+  accessNumber?: string;
+  form?: string;
+  from?: string;
+  to?: string;
+}): Promise<SECFiling[]> {
+  try {
+    const query = Object.fromEntries(
+      Object.entries({
+        type: "sec-filings",
+        symbol: params.symbol?.trim().toUpperCase() || undefined,
+        cik: params.cik?.trim() || undefined,
+        accessNumber: params.accessNumber?.trim() || undefined,
+        form: params.form?.trim() || undefined,
+        from: params.from?.trim() || undefined,
+        to: params.to?.trim() || undefined,
+      }).filter(([, value]) => value !== undefined && value !== ""),
+    ) as Record<string, string>;
+
+    const result = await finnhubRequest<SECFiling[]>(query);
+    return Array.isArray(result) ? result.slice(0, 250) : [];
   } catch {
     return [];
   }

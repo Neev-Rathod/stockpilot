@@ -226,6 +226,9 @@ export async function GET(request: NextRequest) {
 
   const symbol = searchParams.get("symbol") ?? undefined;
   const category = searchParams.get("category") ?? undefined;
+  const cik = searchParams.get("cik") ?? undefined;
+  const accessNumber = searchParams.get("accessNumber") ?? undefined;
+  const form = searchParams.get("form") ?? undefined;
   const from = searchParams.get("from") ?? undefined;
   const to = searchParams.get("to") ?? undefined;
 
@@ -357,6 +360,24 @@ export async function GET(request: NextRequest) {
 
       const result = await proxyFinnhub("/calendar/ipo", { from, to });
       return NextResponse.json(result.body, { status: result.status });
+    }
+
+    if (type === "sec-filings") {
+      const result = await proxyFinnhub("/stock/filings", {
+        symbol,
+        cik,
+        accessNumber,
+        form,
+        from,
+        to,
+      });
+
+      if (!result.ok) {
+        return NextResponse.json(result.body, { status: result.status });
+      }
+
+      const payload = Array.isArray(result.body) ? result.body : [];
+      return NextResponse.json(payload.slice(0, 250), { status: 200 });
     }
 
     return NextResponse.json(
