@@ -17,6 +17,23 @@
  *    candles/indicators to view regardless of how many symbols are checked
  *    for comparison. A new "Compare" chart style is the explicit multi-line
  *    overlay mode (what used to be the only option once >1 symbol was picked).
+ *
+ * New in this revision:
+ *  - LIVE TOOL PREVIEW: multi-point tools (trendline, ray, channel,
+ *    rectangle, measure, harmonic/chart patterns) now render a "rubber
+ *    band" preview that follows the pointer after the first click, instead
+ *    of only appearing once the final point is placed. A `hoverPointRef`
+ *    is updated on every `pointermove` and spliced into the in-progress
+ *    draft so `drawOverlay` can render the pending segment live.
+ *  - REAL SPLIT VIEW: a new "split" chart style renders one independent
+ *    `lightweight-charts` pane per selected symbol in a responsive grid,
+ *    instead of forcing every symbol onto a single shared price axis. The
+ *    panes are kept in lockstep by subscribing to
+ *    `timeScale().subscribeVisibleLogicalRangeChange` and
+ *    `chart.subscribeCrosshairMove` on each pane and mirroring the range /
+ *    crosshair position onto every other pane (guarded against feedback
+ *    loops with a `syncing` flag). This is distinct from "Compare", which
+ *    remains the single-axis overlay mode.
  * ---------------------------------------------------------------------------
  */
 
@@ -54,6 +71,7 @@ import {
   LineChart as LineIcon,
   AreaChart as AreaIcon,
   GitCompareArrows,
+  LayoutGrid,
 } from "lucide-react";
 import type { OhlcvCandle, OhlcvSeries } from "@/lib/ohlcv";
 
@@ -78,7 +96,7 @@ type ToolId =
   | "triangle"
   | "threedrives";
 
-type ChartStyle = "candles" | "bars" | "line" | "area" | "compare";
+type ChartStyle = "candles" | "bars" | "line" | "area" | "compare" | "split";
 
 /** Any concrete series handle — used where we only need coordinate/price-scale helpers. */
 type AnySeriesApi = ISeriesApi<SeriesType>;
@@ -134,6 +152,7 @@ const PATTERN_LABELS: Partial<Record<ToolId, string[]>> = {
 
 const DRAWING_COLOR = "#38bdf8";
 const PATTERN_COLOR = "#fbbf24";
+const PREVIEW_COLOR = "rgba(148,163,184,.7)";
 
 /* --------------------------------------------------------------------- */
 /* Indicator math                                                        */
@@ -265,6 +284,12 @@ export function ComparisonChart({
   const indicatorSeriesRef = useRef<Map<string, AnySeriesApi>>(new Map());
   const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
+  // Split-view: one independent chart instance per symbol, kept in sync.
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const splitChartsRef = useRef<
+    Map<string, { chart: IChartApi; series: AnySeriesApi }>
+  >(new Map());
+
   const [chartStyle, setChartStyle] = useState<ChartStyle>("candles");
   const [focusSymbol, setFocusSymbol] = useState<string | undefined>(
     series[0]?.symbol,
@@ -289,6 +314,10 @@ export function ComparisonChart({
   const drawingsRef = useRef<Drawing[]>([]);
   const draftRef = useRef<RawPoint[]>([]);
   const brushingRef = useRef(false);
+  // Tracks the pointer's current chart-space position while a multi-point
+  // tool has a draft in progress, so the in-progress segment can be drawn
+  // live instead of only appearing once the final point is clicked.
+  const hoverPointRef = useRef<RawPoint | null>(null);
 
   useEffect(() => {
     toolRef.current = tool;
@@ -311,6 +340,7 @@ export function ComparisonChart({
     [series, effectiveFocusSymbol],
   );
   const isCompareMode = chartStyle === "compare";
+  const isSplitMode = chartStyle === "split";
 
   /* ---------------- overlay sizing ---------------- */
   const sizeOverlay = useCallback(() => {
@@ -379,11 +409,20 @@ export function ComparisonChart({
 
     const activeTool = toolRef.current;
     const all = [...drawingsRef.current];
+
     if (draftRef.current.length > 0) {
+      const needed = POINTS_NEEDED[activeTool];
+      // Splice the live pointer position in as a temporary trailing point
+      // so tools with >1 point required render a "rubber band" preview
+      // between clicks, instead of staying invisible until the last click.
+      const previewPoints =
+        draftRef.current.length < needed && hoverPointRef.current
+          ? [...draftRef.current, hoverPointRef.current]
+          : draftRef.current;
       all.push({
         id: "__draft",
         tool: activeTool,
-        points: draftRef.current,
+        points: previewPoints,
         color: PATTERN_TOOLS.has(activeTool) ? PATTERN_COLOR : DRAWING_COLOR,
       });
     }
@@ -391,10 +430,15 @@ export function ComparisonChart({
     for (const d of all) {
       const pts = renderPoints(d.points);
       if (pts.length === 0) continue;
-      ctx.strokeStyle = d.color;
-      ctx.fillStyle = d.color;
+      const isLivePreview =
+        d.id === "__draft" &&
+        hoverPointRef.current !== null &&
+        d.points.at(-1) === hoverPointRef.current;
+      ctx.strokeStyle = isLivePreview ? PREVIEW_COLOR : d.color;
+      ctx.fillStyle = isLivePreview ? PREVIEW_COLOR : d.color;
       ctx.lineWidth = 1.6;
       ctx.font = "11px system-ui, sans-serif";
+      if (isLivePreview) ctx.setLineDash([5, 4]);
 
       const labels = PATTERN_LABELS[d.tool];
 
@@ -451,7 +495,7 @@ export function ComparisonChart({
         ctx.fillText(d.text ?? "", pts[0].x + 4, pts[0].y - 4);
       } else if (d.tool === "measure" && pts.length >= 2) {
         const [a, b] = pts;
-        ctx.setLineDash([4, 3]);
+        ctx.setLineDash(isLivePreview ? [5, 4] : [4, 3]);
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
@@ -505,6 +549,8 @@ export function ComparisonChart({
         ctx.lineTo(pts[1].x, pts[1].y);
         ctx.stroke();
       }
+
+      if (isLivePreview) ctx.setLineDash([]);
     }
   }, [toXY]);
 
@@ -521,6 +567,7 @@ export function ComparisonChart({
       if (!point) return;
 
       draftRef.current = [...draftRef.current, point];
+      hoverPointRef.current = point;
       const needed = POINTS_NEEDED[activeTool];
 
       if (draftRef.current.length >= needed) {
@@ -537,6 +584,7 @@ export function ComparisonChart({
         };
         setDrawings((prev) => [...prev, newDrawing]);
         draftRef.current = [];
+        hoverPointRef.current = null;
       }
       drawOverlay();
     },
@@ -686,7 +734,7 @@ export function ComparisonChart({
     [indicators],
   );
 
-  /* ---------------- render primary data ---------------- */
+  /* ---------------- render primary (single-axis) data ---------------- */
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -704,7 +752,9 @@ export function ComparisonChart({
     indicatorSeriesRef.current.forEach((s) => chart.removeSeries(s));
     indicatorSeriesRef.current.clear();
 
-    if (series.length === 0) {
+    // Split mode renders into its own set of chart instances below — leave
+    // the primary (hidden) chart empty so it isn't doing wasted work.
+    if (isSplitMode || series.length === 0) {
       sizeOverlay();
       drawOverlay();
       return;
@@ -781,7 +831,7 @@ export function ComparisonChart({
       }
 
       applyIndicators(candles);
-    } else {
+    } else if (isCompareMode) {
       const palette = ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#f87171"];
       series.forEach((entry, i) => {
         const s = chart.addSeries(LineSeries, {
@@ -810,6 +860,7 @@ export function ComparisonChart({
     chartStyle,
     focusEntry,
     isCompareMode,
+    isSplitMode,
     indicators.volume,
     applyIndicators,
     sizeOverlay,
@@ -817,10 +868,129 @@ export function ComparisonChart({
   ]);
 
   useEffect(() => {
-    if (!isCompareMode && focusEntry) applyIndicators(focusEntry.candles);
-  }, [indicators, focusEntry, isCompareMode, applyIndicators]);
+    if (!isCompareMode && !isSplitMode && focusEntry)
+      applyIndicators(focusEntry.candles);
+  }, [indicators, focusEntry, isCompareMode, isSplitMode, applyIndicators]);
 
-  /* ---------------- freehand brush via pointer events on overlay ---------------- */
+  /* ---------------- split view: one independent, synced chart per symbol ---------------- */
+  useEffect(() => {
+    const container = splitContainerRef.current;
+    if (!container) return;
+
+    // Tear down any existing panes before rebuilding (covers both "leaving
+    // split mode" and "selection changed while in split mode").
+    splitChartsRef.current.forEach(({ chart }) => chart.remove());
+    splitChartsRef.current.clear();
+    container.innerHTML = "";
+
+    if (!isSplitMode || series.length === 0) return;
+
+    const cols = series.length === 1 ? 1 : series.length <= 4 ? 2 : 3;
+    container.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+    const closeByTime = new Map<string, Map<Time, number>>();
+    const panes: { symbol: string; chart: IChartApi; series: AnySeriesApi }[] =
+      [];
+    let syncing = false;
+
+    series.forEach((entry) => {
+      const paneWrap = document.createElement("div");
+      paneWrap.className =
+        "relative flex flex-col overflow-hidden rounded-xl border border-white/[.08] bg-black/10";
+
+      const label = document.createElement("div");
+      label.className =
+        "flex items-center justify-between border-b border-white/[.06] px-2.5 py-1.5 text-[11px] font-bold text-slate-300";
+      label.textContent = entry.symbol;
+
+      const paneDiv = document.createElement("div");
+      paneDiv.className = "min-h-0 flex-1";
+
+      paneWrap.appendChild(label);
+      paneWrap.appendChild(paneDiv);
+      container.appendChild(paneWrap);
+
+      const paneChart = createChart(paneDiv, {
+        layout: { background: { color: "transparent" }, textColor: "#94a3b8" },
+        grid: {
+          vertLines: { color: "#1b2333" },
+          horzLines: { color: "#1b2333" },
+        },
+        crosshair: { mode: CrosshairMode.Normal },
+        rightPriceScale: { borderColor: "#273244" },
+        timeScale: { borderColor: "#273244" },
+        autoSize: true,
+      });
+
+      const candleSeries = paneChart.addSeries(CandlestickSeries, {
+        upColor: "#34d399",
+        downColor: "#f87171",
+        borderVisible: false,
+        wickUpColor: "#34d399",
+        wickDownColor: "#f87171",
+      });
+      candleSeries.setData(
+        entry.candles.map((c) => ({
+          time: c.date as Time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        })),
+      );
+      paneChart.timeScale().fitContent();
+
+      const cMap = new Map<Time, number>();
+      entry.candles.forEach((c) => cMap.set(c.date as Time, c.close));
+      closeByTime.set(entry.symbol, cMap);
+
+      panes.push({
+        symbol: entry.symbol,
+        chart: paneChart,
+        series: candleSeries,
+      });
+      splitChartsRef.current.set(entry.symbol, {
+        chart: paneChart,
+        series: candleSeries,
+      });
+    });
+
+    // Mirror each pane's visible range and crosshair onto every other pane.
+    panes.forEach(({ chart }) => {
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (syncing || !range) return;
+        syncing = true;
+        panes.forEach(({ chart: other }) => {
+          if (other !== chart) other.timeScale().setVisibleLogicalRange(range);
+        });
+        syncing = false;
+      });
+
+      chart.subscribeCrosshairMove((param) => {
+        if (syncing) return;
+        syncing = true;
+        panes.forEach(({ symbol, chart: other, series: otherSeries }) => {
+          if (other === chart) return;
+          if (!param.time) {
+            other.clearCrosshairPosition();
+            return;
+          }
+          const price = closeByTime.get(symbol)?.get(param.time as Time);
+          if (price !== undefined) {
+            other.setCrosshairPosition(price, param.time, otherSeries);
+          }
+        });
+        syncing = false;
+      });
+    });
+
+    return () => {
+      panes.forEach(({ chart }) => chart.remove());
+      splitChartsRef.current.clear();
+    };
+  }, [isSplitMode, series]);
+
+  /* ---------------- freehand brush + live tool preview via pointer events on overlay ---------------- */
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       if (toolRef.current !== "brush") return;
@@ -833,11 +1003,27 @@ export function ComparisonChart({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (toolRef.current !== "brush" || !brushingRef.current) return;
-      const point = clientToRawPoint(e.clientX, e.clientY);
-      if (point) {
-        draftRef.current = [...draftRef.current, point];
-        drawOverlay();
+      const activeTool = toolRef.current;
+
+      if (activeTool === "brush") {
+        if (!brushingRef.current) return;
+        const point = clientToRawPoint(e.clientX, e.clientY);
+        if (point) {
+          draftRef.current = [...draftRef.current, point];
+          drawOverlay();
+        }
+        return;
+      }
+
+      // Live "rubber band" preview: once the first point of a multi-point
+      // tool has been placed, keep tracking the pointer and repaint so the
+      // pending segment/shape follows the cursor until the next click.
+      if (activeTool !== "cursor" && draftRef.current.length > 0) {
+        const point = clientToRawPoint(e.clientX, e.clientY);
+        if (point) {
+          hoverPointRef.current = point;
+          drawOverlay();
+        }
       }
     },
     [clientToRawPoint, drawOverlay],
@@ -864,7 +1050,11 @@ export function ComparisonChart({
   const clearAll = () => {
     setDrawings([]);
     draftRef.current = [];
+    hoverPointRef.current = null;
   };
+
+  const disableTools = isSplitMode;
+  const disableIndicators = isCompareMode || isSplitMode;
 
   /* ---------------- UI ---------------- */
   const toolButtons: { id: ToolId; icon: React.ReactNode; title: string }[] = [
@@ -926,12 +1116,21 @@ export function ComparisonChart({
       icon: <GitCompareArrows className="h-4 w-4" />,
       label: "Compare",
     },
+    {
+      id: "split",
+      icon: <LayoutGrid className="h-4 w-4" />,
+      label: "Split",
+    },
   ];
 
   return (
     <div className="flex h-140 w-full gap-2 rounded-2xl border border-white/8 bg-[#0b0e15] p-2 sm:p-3">
       {/* left tool rail */}
-      <div className="flex w-11 shrink-0 flex-col items-center gap-1 rounded-xl border border-white/6 bg-black/20 py-2">
+      <div
+        className={`flex w-11 shrink-0 flex-col items-center gap-1 rounded-xl border border-white/6 bg-black/20 py-2 ${
+          disableTools ? "pointer-events-none opacity-40" : ""
+        }`}
+      >
         {toolButtons.map((b) => (
           <button
             key={b.id}
@@ -939,6 +1138,7 @@ export function ComparisonChart({
             onClick={() => {
               setTool(b.id);
               draftRef.current = [];
+              hoverPointRef.current = null;
             }}
             className={`flex h-8 w-8 items-center justify-center rounded-lg ${
               tool === b.id
@@ -970,6 +1170,7 @@ export function ComparisonChart({
                   onClick={() => {
                     setTool(p.id);
                     draftRef.current = [];
+                    hoverPointRef.current = null;
                     setShowPatternPicker(false);
                   }}
                   className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-slate-200 hover:bg-white/6"
@@ -1012,7 +1213,7 @@ export function ComparisonChart({
               <ChevronDown className="h-3 w-3" />
             </button>
             {showStylePicker && (
-              <div className="absolute left-0 top-9 z-20 w-36 rounded-xl border border-white/8 bg-[#151a24] p-1.5 shadow-xl">
+              <div className="absolute left-0 top-9 z-20 w-40 rounded-xl border border-white/8 bg-[#151a24] p-1.5 shadow-xl">
                 {styleButtons.map((s) => (
                   <button
                     key={s.id}
@@ -1030,7 +1231,7 @@ export function ComparisonChart({
             )}
           </div>
 
-          {!isCompareMode && series.length > 1 && (
+          {!isCompareMode && !isSplitMode && series.length > 1 && (
             <select
               aria-label="Focused symbol"
               value={focusSymbol}
@@ -1056,9 +1257,9 @@ export function ComparisonChart({
             </button>
             {showIndicatorPicker && (
               <div className="absolute left-0 top-9 z-20 w-52 space-y-1 rounded-xl border border-white/8 bg-[#151a24] p-2 shadow-xl">
-                {isCompareMode && (
+                {disableIndicators && (
                   <p className="px-1.5 pb-1 text-[10px] text-amber-300">
-                    Switch off Compare style to apply indicators.
+                    Switch to a single-symbol style to apply indicators.
                   </p>
                 )}
                 {(
@@ -1074,14 +1275,14 @@ export function ComparisonChart({
                   <label
                     key={key}
                     className={`flex items-center gap-2 rounded-lg px-1.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/6 ${
-                      isCompareMode
+                      disableIndicators
                         ? "cursor-not-allowed opacity-40"
                         : "cursor-pointer"
                     }`}
                   >
                     <input
                       type="checkbox"
-                      disabled={isCompareMode}
+                      disabled={disableIndicators}
                       checked={indicators[key]}
                       onChange={() =>
                         setIndicators((prev) => ({
@@ -1099,12 +1300,17 @@ export function ComparisonChart({
           </div>
         </div>
 
-        <div ref={containerRef} className="relative h-125 w-full">
+        {/* single-axis chart (candles / bars / line / area / compare) */}
+        <div
+          ref={containerRef}
+          className="relative h-125 w-full"
+          style={{ display: isSplitMode ? "none" : "block" }}
+        >
           <canvas
             ref={overlayRef}
             className="absolute inset-0 z-10"
             style={{
-              pointerEvents: tool === "cursor" ? "none" : "auto",
+              pointerEvents: tool === "cursor" || isSplitMode ? "none" : "auto",
               touchAction: "none",
             }}
             onClick={handleOverlayClick}
@@ -1114,6 +1320,14 @@ export function ComparisonChart({
             onPointerLeave={handlePointerUp}
           />
         </div>
+
+        {/* split view: one synced pane per symbol */}
+        {isSplitMode && (
+          <div
+            ref={splitContainerRef}
+            className="grid h-125 w-full auto-rows-fr gap-2"
+          />
+        )}
       </div>
     </div>
   );
