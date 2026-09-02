@@ -2,72 +2,59 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CalendarRange } from "lucide-react";
 import { getIPOCalendar } from "@/lib/finnhub/client";
+import { Panel, PanelHeader, Badge, EmptyState } from "@/components/ui/kit";
 
 export default function IposPage() {
-  const ipoWindow = useMemo(() => {
+  const window = useMemo(() => {
     const to = new Date();
     const from = new Date();
     from.setMonth(from.getMonth() - 6);
-    return {
-      from: from.toISOString().slice(0, 10),
-      to: to.toISOString().slice(0, 10),
-    };
+    return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
   }, []);
 
-  const { data: ipoCalendar = [] } = useQuery({
-    queryKey: ["ipo-calendar", ipoWindow.from, ipoWindow.to],
-    queryFn: () => getIPOCalendar(ipoWindow.from, ipoWindow.to),
+  const { data: ipos = [] } = useQuery({
+    queryKey: ["ipo-calendar", window.from, window.to],
+    queryFn: () => getIPOCalendar(window.from, window.to),
     staleTime: 60 * 60_000,
   });
 
   return (
-    <div className="space-y-8 pb-12">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">IPO Calendar</h1>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-5 pb-12">
+      <h1 className="text-xl font-bold text-txt">IPO calendar</h1>
 
-      <section className="dark-card p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-white">Upcoming IPOs</h2>
-          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-            Next 6 months
-          </span>
+      <Panel padded={false}>
+        <div className="p-5 pb-3">
+          <PanelHeader title="Recent & upcoming IPOs" hint="Rolling 6-month window" />
         </div>
-
-        <div className="space-y-3">
-          {ipoCalendar.length > 0 ? (
-            ipoCalendar.slice(0, 12).map((ipo, index) => (
-              <div
-                key={`${ipo.symbol ?? "ipo"}-${index}`}
-                className="rounded-xl border border-[#1c1d25] bg-[#0d0e12] p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">
-                      {ipo.name ?? ipo.symbol ?? "IPO"}
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      {ipo.symbol ?? "—"} • {ipo.exchange ?? "NYSE"}
-                    </div>
+        {ipos.length === 0 ? (
+          <div className="px-5 pb-5">
+            <EmptyState
+              icon={<CalendarRange className="h-6 w-6" />}
+              title="No IPO events"
+              hint="Add a FINNHUB_API_KEY to .env to enable the IPO calendar."
+            />
+          </div>
+        ) : (
+          <div className="divide-y divide-hairline">
+            {ipos.slice(0, 15).map((ipo, i) => (
+              <div key={`${ipo.symbol ?? "ipo"}-${i}`} className="flex items-center justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-txt">{ipo.name ?? ipo.symbol ?? "IPO"}</div>
+                  <div className="text-[11px] text-txt-mute">
+                    {ipo.symbol ?? "—"} · {ipo.exchange ?? "—"} · {ipo.date ?? "TBD"}
                   </div>
-                  <span className="rounded-full bg-blue-500/10 px-2 py-1 text-[10px] font-bold uppercase text-blue-300">
-                    {ipo.status ?? "expected"}
-                  </span>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                  <span>{ipo.date ?? "TBD"}</span>
-                  <span>{ipo.price ? `$${ipo.price}` : "Price TBD"}</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm tnum text-txt">{ipo.price ? `$${ipo.price}` : "TBD"}</span>
+                  <Badge tone="accent">{(ipo.status ?? "expected").toUpperCase()}</Badge>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="rounded-xl border border-[#1c1d25] bg-[#0d0e12] p-4 text-sm text-slate-400">
-              No IPO events are currently scheduled for this period.
-            </div>
-          )}
-        </div>
-      </section>
+            ))}
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }

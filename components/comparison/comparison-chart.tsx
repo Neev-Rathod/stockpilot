@@ -1085,11 +1085,11 @@ export function ComparisonChart({
     series.forEach((entry) => {
       const paneWrap = document.createElement("div");
       paneWrap.className =
-        "relative flex flex-col overflow-hidden rounded-xl border border-white/[.08] bg-black/10";
+        "relative flex flex-col overflow-hidden rounded-xl border border-hairline/[.08] bg-black/10";
 
       const label = document.createElement("div");
       label.className =
-        "flex items-center justify-between border-b border-white/[.06] px-2.5 py-1.5 text-[11px] font-bold text-slate-300";
+        "flex items-center justify-between border-b border-hairline/[.06] px-2.5 py-1.5 text-[11px] font-bold text-txt-dim";
       label.textContent = entry.symbol;
 
       const paneDiv = document.createElement("div");
@@ -1313,10 +1313,10 @@ export function ComparisonChart({
   ];
 
   return (
-    <div className="flex h-140 w-full gap-2 rounded-2xl border border-white/8 bg-[#0b0e15] p-2 sm:p-3">
+    <div className="flex h-140 w-full gap-2 rounded-2xl border border-hairline bg-[#0b0e15] p-2 sm:p-3">
       {/* left tool rail */}
       <div
-        className={`flex w-11 shrink-0 flex-col items-center gap-1 rounded-xl border border-white/6 bg-black/20 py-2 ${
+        className={`flex w-11 shrink-0 flex-col items-center gap-1 rounded-xl border border-hairline bg-black/20 py-2 ${
           disableTools ? "pointer-events-none opacity-40" : ""
         }`}
       >
@@ -1331,8 +1331,8 @@ export function ComparisonChart({
             }}
             className={`flex h-8 w-8 items-center justify-center rounded-lg ${
               tool === b.id
-                ? "bg-blue-500 text-white"
-                : "text-slate-400 hover:bg-white/6 hover:text-white"
+                ? "bg-accent text-txt"
+                : "text-txt-dim hover:bg-elevated hover:text-txt"
             }`}
           >
             {b.icon}
@@ -1345,14 +1345,14 @@ export function ComparisonChart({
             onClick={() => setShowPatternPicker((v) => !v)}
             className={`flex h-8 w-8 items-center justify-center rounded-lg ${
               PATTERN_TOOLS.has(tool)
-                ? "bg-amber-500 text-slate-950"
-                : "text-slate-400 hover:bg-white/6 hover:text-white"
+                ? "bg-amber-500 text-black"
+                : "text-txt-dim hover:bg-elevated hover:text-txt"
             }`}
           >
             <Shapes className="h-4 w-4" />
           </button>
           {showPatternPicker && (
-            <div className="absolute left-10 top-0 z-20 w-52 rounded-xl border border-white/8 bg-[#151a24] p-1.5 shadow-xl">
+            <div className="absolute left-10 top-0 z-20 w-52 rounded-xl border border-hairline bg-[#151a24] p-1.5 shadow-xl">
               {patternButtons.map((p) => (
                 <button
                   key={p.id}
@@ -1362,7 +1362,7 @@ export function ComparisonChart({
                     hoverPointRef.current = null;
                     setShowPatternPicker(false);
                   }}
-                  className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-slate-200 hover:bg-white/6"
+                  className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-txt hover:bg-elevated"
                 >
                   {p.label}
                 </button>
@@ -1371,19 +1371,19 @@ export function ComparisonChart({
           )}
         </div>
 
-        <div className="my-1 h-px w-6 bg-white/8" />
+        <div className="my-1 h-px w-6 bg-elevated" />
 
         <button
           title="Undo last"
           onClick={undo}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/6 hover:text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-txt-dim hover:bg-elevated hover:text-txt"
         >
           <Undo2 className="h-4 w-4" />
         </button>
         <button
           title="Clear all drawings"
           onClick={clearAll}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/6 hover:text-rose-300"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-txt-dim hover:bg-elevated hover:text-rose-300"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -1395,14 +1395,14 @@ export function ComparisonChart({
           <div className="relative">
             <button
               onClick={() => setShowStylePicker((v) => !v)}
-              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-black/20 px-2.5 py-1.5 text-xs font-bold text-slate-200 hover:bg-white/6"
+              className="flex items-center gap-1.5 rounded-lg border border-hairline bg-black/20 px-2.5 py-1.5 text-xs font-bold text-txt hover:bg-elevated"
             >
               {styleButtons.find((s) => s.id === chartStyle)?.icon}
               {styleButtons.find((s) => s.id === chartStyle)?.label}
               <ChevronDown className="h-3 w-3" />
             </button>
             {showStylePicker && (
-              <div className="absolute left-0 top-9 z-20 w-40 rounded-xl border border-white/8 bg-[#151a24] p-1.5 shadow-xl">
+              <div className="absolute left-0 top-9 z-20 w-40 rounded-xl border border-hairline bg-[#151a24] p-1.5 shadow-xl">
                 {styleButtons.map((s) => (
                   <button
                     key={s.id}
@@ -1410,7 +1410,7 @@ export function ComparisonChart({
                       setChartStyle(s.id);
                       setShowStylePicker(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-slate-200 hover:bg-white/6"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-txt hover:bg-elevated"
                   >
                     {s.icon}
                     {s.label}
@@ -1425,7 +1425,7 @@ export function ComparisonChart({
               aria-label="Focused symbol"
               value={focusSymbol}
               onChange={(e) => setFocusSymbol(e.target.value)}
-              className="rounded-lg border border-white/8 bg-black/20 px-2.5 py-1.5 text-xs font-bold text-slate-200 outline-none"
+              className="rounded-lg border border-hairline bg-black/20 px-2.5 py-1.5 text-xs font-bold text-txt outline-none"
             >
               {series.map((s) => (
                 <option key={s.symbol} value={s.symbol}>
@@ -1438,14 +1438,14 @@ export function ComparisonChart({
           <div className="relative">
             <button
               onClick={() => setShowIndicatorPicker((v) => !v)}
-              className="flex items-center gap-1.5 rounded-lg border border-white/8 bg-black/20 px-2.5 py-1.5 text-xs font-bold text-slate-200 hover:bg-white/6"
+              className="flex items-center gap-1.5 rounded-lg border border-hairline bg-black/20 px-2.5 py-1.5 text-xs font-bold text-txt hover:bg-elevated"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Indicators
               <ChevronDown className="h-3 w-3" />
             </button>
             {showIndicatorPicker && (
-              <div className="absolute left-0 top-9 z-20 w-52 space-y-1 rounded-xl border border-white/8 bg-[#151a24] p-2 shadow-xl">
+              <div className="absolute left-0 top-9 z-20 w-52 space-y-1 rounded-xl border border-hairline bg-[#151a24] p-2 shadow-xl">
                 {disableIndicators && (
                   <p className="px-1.5 pb-1 text-[10px] text-amber-300">
                     Switch to a single-symbol style to apply indicators.
@@ -1463,7 +1463,7 @@ export function ComparisonChart({
                 ).map(([key, label]) => (
                   <label
                     key={key}
-                    className={`flex items-center gap-2 rounded-lg px-1.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/6 ${
+                    className={`flex items-center gap-2 rounded-lg px-1.5 py-1 text-xs font-semibold text-txt hover:bg-elevated ${
                       disableIndicators
                         ? "cursor-not-allowed opacity-40"
                         : "cursor-pointer"
@@ -1497,7 +1497,7 @@ export function ComparisonChart({
               <button
                 onClick={clearAll}
                 title="Clear all overlays"
-                className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300/80 transition-colors hover:bg-amber-400/20 hover:text-white"
+                className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300/80 transition-colors hover:bg-amber-400/20 hover:text-txt"
               >
                 Clear
               </button>

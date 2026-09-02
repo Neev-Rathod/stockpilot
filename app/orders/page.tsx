@@ -1,117 +1,106 @@
 "use client";
 
-const orders = [
-  {
-    side: "BUY",
-    symbol: "NVDA",
-    shares: 10,
-    orderType: "Market Order",
-    status: "Executed",
-    price: "$181.42",
-  },
-  {
-    side: "SELL",
-    symbol: "AAPL",
-    shares: 5,
-    orderType: "Limit",
-    status: "Pending",
-    price: "$240.00",
-  },
-  {
-    side: "BUY",
-    symbol: "MSFT",
-    shares: 4,
-    orderType: "Market Order",
-    status: "Executed",
-    price: "$506.30",
-  },
-];
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { usePortfolioStore } from "@/lib/portfolio-store";
+import { formatUsd } from "@/lib/format";
+import { Panel, PanelHeader, Segmented, Stat, Badge, EmptyState } from "@/components/ui/kit";
+import { ReceiptText } from "lucide-react";
+
+const FILTERS = [
+  { value: "all", label: "All" },
+  { value: "buy", label: "Buys" },
+  { value: "sell", label: "Sells" },
+] as const;
 
 export default function OrdersPage() {
-  return (
-    <div className="space-y-6 pb-12">
-      <div>
-        <div className="text-[10px] uppercase tracking-[0.24em] text-slate-500">
-          Paper Trading
-        </div>
-        <h1 className="mt-1 text-2xl font-bold text-white">Orders</h1>
-      </div>
+  const transactions = usePortfolioStore((s) => s.transactions);
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("all");
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard label="Open" value="2" tone="blue" />
-        <StatCard label="Executed" value="12" tone="emerald" />
-        <StatCard label="Cancelled" value="1" tone="red" />
-      </div>
+  const stats = useMemo(() => {
+    const buys = transactions.filter((t) => t.type === "buy");
+    const sells = transactions.filter((t) => t.type === "sell");
+    return {
+      total: transactions.length,
+      buyValue: buys.reduce((s, t) => s + t.price * t.quantity, 0),
+      sellValue: sells.reduce((s, t) => s + t.price * t.quantity, 0),
+    };
+  }, [transactions]);
 
-      <div className="dark-card p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-white">Recent Orders</h2>
-          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-            Activity
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          {orders.map((order) => (
-            <div
-              key={`${order.side}-${order.symbol}-${order.orderType}`}
-              className="rounded-2xl border border-[#1e2027] bg-[#0d0e12] px-4 py-3"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${order.side === "BUY" ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"}`}
-                    >
-                      {order.side}
-                    </span>
-                    <span className="font-mono text-sm font-bold text-white">
-                      {order.symbol}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-400">
-                    {order.shares} shares • {order.orderType}
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <div className="font-mono text-sm font-bold text-white">
-                    {order.price}
-                  </div>
-                  <div
-                    className={`mt-1 text-[10px] font-semibold ${order.status === "Executed" ? "text-emerald-400" : "text-amber-400"}`}
-                  >
-                    {order.status}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+  const rows = useMemo(
+    () => (filter === "all" ? transactions : transactions.filter((t) => t.type === filter)),
+    [transactions, filter],
   );
-}
-
-function StatCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "blue" | "emerald" | "red";
-}) {
-  const classes = {
-    blue: "border-blue-500/30 bg-blue-500/5 text-blue-300",
-    emerald: "border-emerald-500/30 bg-emerald-500/5 text-emerald-300",
-    red: "border-red-500/30 bg-red-500/5 text-red-300",
-  };
 
   return (
-    <div className={`rounded-2xl border p-4 ${classes[tone]}`}>
-      <div className="text-[10px] uppercase tracking-[0.2em]">{label}</div>
-      <div className="mt-2 text-2xl font-bold font-mono">{value}</div>
+    <div className="mx-auto max-w-5xl space-y-5 pb-12">
+      <div>
+        <div className="text-[11px] uppercase tracking-[0.2em] text-txt-mute">Paper trading</div>
+        <h1 className="mt-1 text-xl font-bold text-txt">Order history</h1>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Stat label="Total orders" value={String(stats.total)} />
+        <Stat label="Bought" value={<span className="text-up">{formatUsd(stats.buyValue)}</span>} />
+        <Stat label="Sold" value={<span className="text-down">{formatUsd(stats.sellValue)}</span>} />
+      </div>
+
+      <Panel padded={false}>
+        <div className="flex items-center justify-between p-5 pb-3">
+          <PanelHeader title="Orders" />
+          <Segmented options={FILTERS} value={filter} onChange={setFilter} />
+        </div>
+
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={<ReceiptText className="h-6 w-6" />}
+            title="No orders yet"
+            hint="Every buy and sell you place is recorded here. All orders execute immediately at the market price."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-hairline text-[11px] uppercase tracking-wide text-txt-mute">
+                <tr>
+                  <th className="px-5 py-2.5 font-medium">Date</th>
+                  <th className="px-5 py-2.5 font-medium">Side</th>
+                  <th className="px-5 py-2.5 font-medium">Symbol</th>
+                  <th className="px-5 py-2.5 font-medium">Qty</th>
+                  <th className="px-5 py-2.5 font-medium">Price</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-hairline font-mono tnum">
+                {rows.map((tx) => (
+                  <tr key={tx.id} className="transition hover:bg-elevated">
+                    <td className="px-5 py-3 text-txt-dim">
+                      {new Date(tx.timestamp).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="px-5 py-3">
+                      <Badge tone={tx.type === "buy" ? "up" : "down"}>{tx.type.toUpperCase()}</Badge>
+                    </td>
+                    <td className="px-5 py-3">
+                      <Link href={`/stock/${tx.symbol}`} className="font-bold text-txt hover:text-accent">
+                        {tx.symbol}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 text-txt-dim">{tx.quantity}</td>
+                    <td className="px-5 py-3 text-txt">{formatUsd(tx.price)}</td>
+                    <td className="px-5 py-3 text-right font-semibold text-txt">
+                      {formatUsd(tx.price * tx.quantity)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }

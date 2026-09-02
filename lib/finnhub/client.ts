@@ -1,3 +1,5 @@
+import { getDbQuote, getDbQuotes } from "@/lib/supabase/queries";
+
 export type MarketNewsCategory = "general" | "forex" | "crypto" | "merger";
 
 export interface FinnhubCompanyProfile {
@@ -90,88 +92,19 @@ async function finnhubRequest<T>(params: Record<string, string>): Promise<T> {
   return (await response.json()) as T;
 }
 
+// Quotes are now served from the Supabase `stock_prices` data (latest close +
+// previous close), not the Finnhub live API. The cosmetic 1s drift in
+// lib/use-live-quotes.ts still animates these values in the UI.
 export async function getStockQuote(
   symbol: string,
 ): Promise<MarketQuote | null> {
-  const cleaned = symbol.trim();
-  if (!cleaned) {
-    return null;
-  }
-
-  try {
-    const quote = await finnhubRequest<FinnhubQuote>({
-      type: "quote",
-      symbol: cleaned.toUpperCase(),
-    });
-
-    const price = typeof quote?.c === "number" ? quote.c : 0;
-    const previousClose = typeof quote?.pc === "number" ? quote.pc : null;
-
-    return {
-      symbol: cleaned.toUpperCase(),
-      companyName: cleaned.toUpperCase(),
-      price,
-      change: typeof quote?.d === "number" ? quote.d : 0,
-      percentChange: typeof quote?.dp === "number" ? quote.dp : 0,
-      open: typeof quote?.o === "number" ? quote.o : null,
-      high: typeof quote?.h === "number" ? quote.h : null,
-      low: typeof quote?.l === "number" ? quote.l : null,
-      previousClose,
-      volume: null,
-      currency: "USD",
-    };
-  } catch {
-    return null;
-  }
+  return getDbQuote(symbol);
 }
 
 export async function getMultipleQuotes(
   symbols: string[],
 ): Promise<MarketQuote[]> {
-  const unique = [
-    ...new Set(
-      symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean),
-    ),
-  ];
-  if (unique.length === 0) {
-    return [];
-  }
-
-  try {
-    const payload = await finnhubRequest<
-      Array<FinnhubQuote & { symbol?: string; companyName?: string }>
-    >({
-      type: "bulk-quote",
-      symbols: unique.join(","),
-    });
-
-    return payload
-      .filter((entry) => entry && typeof entry === "object")
-      .map((entry) => {
-        const symbol = String(entry.symbol ?? "").toUpperCase();
-        const price = typeof entry.c === "number" ? entry.c : 0;
-        const previousClose = typeof entry.pc === "number" ? entry.pc : null;
-
-        return {
-          symbol,
-          companyName: entry.companyName ?? symbol,
-          price,
-          change: typeof entry.d === "number" ? entry.d : 0,
-          percentChange: typeof entry.dp === "number" ? entry.dp : 0,
-          open: typeof entry.o === "number" ? entry.o : null,
-          high: typeof entry.h === "number" ? entry.h : null,
-          low: typeof entry.l === "number" ? entry.l : null,
-          previousClose,
-          volume: null,
-          currency: "USD",
-        };
-      });
-  } catch {
-    const results = await Promise.all(
-      unique.map((symbol) => getStockQuote(symbol)),
-    );
-    return results.filter(Boolean) as MarketQuote[];
-  }
+  return getDbQuotes(symbols);
 }
 
 export async function getCompanyProfile(

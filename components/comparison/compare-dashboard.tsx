@@ -419,16 +419,16 @@ export function CompareDashboard() {
   return (
     <div className="space-y-6 pb-12">
       {/* Header & Company Selector */}
-      <section className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_right,_rgba(37,99,235,.25),transparent_40%),#11141c] p-5 sm:p-7">
+      <section className="overflow-hidden rounded-3xl border border-hairline bg-[radial-gradient(circle_at_top_right,_rgba(245,183,10,.12),transparent_45%),#12141a] p-5 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-blue-300">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-accent">
               <BarChart3 className="h-4 w-4" /> Multi-Stock Benchmark & AI Intelligence
             </div>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+            <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-txt sm:text-4xl">
               Comparative Analysis & Technical Canvas
             </h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-400">
+            <p className="mt-2 max-w-2xl text-sm text-txt-dim">
               Benchmark closing prices, examine reported financials & recommendation trends, and let AI detect and draw chart patterns directly onto the live canvas.
             </p>
           </div>
@@ -441,30 +441,30 @@ export function CompareDashboard() {
                 setShowAiAnalysis(true);
                 toast.success("Comparative AI analysis updated!");
               }}
-              className="flex items-center gap-2 rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02] hover:shadow-blue-500/30 active:scale-[0.98]"
+              className="flex items-center gap-2 rounded-2xl border border-accent bg-accent px-4 py-3 text-xs font-bold text-black shadow-lg shadow-black/30 transition-all hover:bg-accent-hover active:scale-[0.98]"
             >
               <Sparkles className={`h-4 w-4 ${isAnalyzing ? "animate-spin" : ""}`} />
               Run AI Analysis
             </button>
 
             <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-right">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-up">
                 Data Feed
               </div>
-              <div className="mt-0.5 text-xs font-semibold text-emerald-100">
+              <div className="mt-0.5 text-xs font-semibold text-up">
                 Local OHLCV + Finnhub
               </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-6 border-t border-white/[0.08] pt-5">
+        <div className="mt-6 border-t border-hairline/[0.08] pt-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-slate-300">
+            <p className="text-xs font-semibold text-txt-dim">
               Selected Benchmarks ({selected.length}/5):
             </p>
             {aiAnalysis && (
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-txt-dim">
                 AI Detected {aiAnalysis.detectedPatterns.length} technical patterns
               </span>
             )}
@@ -478,8 +478,8 @@ export function CompareDashboard() {
                 title={name}
                 className={`rounded-xl border px-3.5 py-2 text-xs font-bold transition-all ${
                   selected.includes(symbol)
-                    ? "border-blue-400 bg-blue-500 text-white shadow-md shadow-blue-500/20"
-                    : "border-white/[0.08] bg-black/20 text-slate-300 hover:border-slate-500 hover:bg-white/[.05]"
+                    ? "border-accent bg-accent text-txt shadow-md shadow-black/30"
+                    : "border-hairline/[0.08] bg-elevated text-txt-dim hover:border-hairline hover:bg-accent/[.05]"
                 }`}
               >
                 {symbol}
@@ -492,19 +492,19 @@ export function CompareDashboard() {
       {/* Interactive Chart Canvas Section */}
       <section
         ref={chartSectionRef}
-        className="rounded-3xl border border-white/[0.08] bg-[#11141c] p-4 sm:p-6"
+        className="rounded-3xl border border-hairline/[0.08] bg-panel p-4 sm:p-6"
       >
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-white text-lg">Price Performance & Canvas</h2>
+              <h2 className="font-bold text-txt text-lg">Price Performance & Canvas</h2>
               {activePatternId && (
-                <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                <span className="rounded-full bg-[color:var(--accent-soft)] border border-[color:var(--accent-soft)] px-2 py-0.5 text-[10px] font-bold text-accent">
                   AI Pattern Active
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-txt-dim">
               {normalized
                 ? "Indexed to 100 at the start of period for equal base comparison."
                 : "Actual daily price in USD. Switch styles or focus a stock to view AI drawings & indicators."}
@@ -514,11 +514,11 @@ export function CompareDashboard() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={clearCanvas}
-              className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/[0.05]"
+              className="rounded-xl border border-hairline/[0.08] bg-elevated px-3 py-1.5 text-xs font-semibold text-txt-dim hover:text-txt hover:bg-accent/[0.05]"
             >
               Clear Canvas
             </button>
-            <div className="flex rounded-xl border border-white/[0.08] bg-black/20 p-1">
+            <div className="flex rounded-xl border border-hairline/[0.08] bg-elevated p-1">
               {[
                 [false, "Price"],
                 [true, "Indexed Return"],
@@ -528,8 +528,8 @@ export function CompareDashboard() {
                   onClick={() => setNormalized(value as boolean)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                     normalized === value
-                      ? "bg-blue-500 text-white shadow"
-                      : "text-slate-400 hover:text-white"
+                      ? "bg-accent text-txt shadow"
+                      : "text-txt-dim hover:text-txt"
                   }`}
                 >
                   {label as string}
@@ -546,8 +546,8 @@ export function CompareDashboard() {
               onClick={() => setRange(value)}
               className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
                 range === value
-                  ? "bg-emerald-400 text-slate-950 font-extrabold shadow-sm"
-                  : "bg-white/[.04] text-slate-400 hover:bg-white/[.08]"
+                  ? "bg-emerald-400 text-black font-extrabold shadow-sm"
+                  : "bg-accent/[.04] text-txt-dim hover:bg-accent/[.08]"
               }`}
             >
               {value}
@@ -556,11 +556,11 @@ export function CompareDashboard() {
         </div>
 
         {history.isLoading ? (
-          <div className="flex h-[440px] items-center justify-center text-sm text-slate-400">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin text-blue-400" /> Loading local market history…
+          <div className="flex h-[440px] items-center justify-center text-sm text-txt-dim">
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin text-accent" /> Loading local market history…
           </div>
         ) : history.isError ? (
-          <div className="flex h-[440px] items-center justify-center text-sm text-rose-300">
+          <div className="flex h-[440px] items-center justify-center text-sm text-down">
             Could not load the local OHLCV files.
           </div>
         ) : (
@@ -581,17 +581,17 @@ export function CompareDashboard() {
 
       {/* AI Comparative Intelligence Panel */}
       {aiAnalysis && (
-        <section className="rounded-3xl border border-white/[0.08] bg-[#11141c] p-5 sm:p-7 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
+        <section className="rounded-3xl border border-hairline/[0.08] bg-panel p-5 sm:p-7 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline/[0.08] pb-5">
             <div>
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-blue-400">
-                <Bot className="h-4 w-4 text-blue-400" />
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-accent">
+                <Bot className="h-4 w-4 text-accent" />
                 Comparative AI Intelligence
               </div>
-              <h2 className="mt-1 text-xl font-extrabold text-white sm:text-2xl">
+              <h2 className="mt-1 text-xl font-extrabold text-txt sm:text-2xl">
                 Multi-Vector Synthesis & Canvas Pattern Detection
               </h2>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-txt-dim">
                 Synthesized across historical OHLCV, Finnhub analyst recommendation trends, reported SEC financials & news.
               </p>
             </div>
@@ -599,14 +599,14 @@ export function CompareDashboard() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={drawAllPatterns}
-                className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs font-bold text-amber-300 transition-all hover:bg-amber-500/20 active:scale-[0.98]"
+                className="flex items-center gap-1.5 rounded-xl border border-[color:var(--accent-soft)] bg-[color:var(--accent-soft)] px-3.5 py-2 text-xs font-bold text-accent transition-all hover:bg-[color:var(--accent-soft)] active:scale-[0.98]"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Draw All Patterns on Chart
               </button>
               <button
                 onClick={() => setShowAiAnalysis((v) => !v)}
-                className="rounded-xl border border-white/[0.08] bg-black/20 p-2 text-slate-400 hover:text-white"
+                className="rounded-xl border border-hairline/[0.08] bg-elevated p-2 text-txt-dim hover:text-txt"
                 title={showAiAnalysis ? "Collapse" : "Expand"}
               >
                 {showAiAnalysis ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -618,32 +618,32 @@ export function CompareDashboard() {
             <div className="mt-6 space-y-7">
               {/* Executive Verdict Banner */}
               <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
+                <div className="rounded-2xl border border-hairline-strong bg-[color:var(--accent-soft)] p-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-accent">
                       Optimal Risk-Adjusted
                     </span>
-                    <Trophy className="h-4 w-4 text-blue-400" />
+                    <Trophy className="h-4 w-4 text-accent" />
                   </div>
-                  <div className="mt-2 text-2xl font-black text-white">
+                  <div className="mt-2 text-2xl font-black text-txt">
                     {aiAnalysis.aiVerdict.topPick}
                   </div>
-                  <p className="mt-1 text-xs text-slate-300 leading-relaxed">
+                  <p className="mt-1 text-xs text-txt-dim leading-relaxed">
                     {aiAnalysis.aiVerdict.topPickRationale}
                   </p>
                 </div>
 
                 <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-up">
                       Growth & Return Leader
                     </span>
-                    <TrendingUp className="h-4 w-4 text-emerald-400" />
+                    <TrendingUp className="h-4 w-4 text-up" />
                   </div>
-                  <div className="mt-2 text-2xl font-black text-white">
+                  <div className="mt-2 text-2xl font-black text-txt">
                     {aiAnalysis.aiVerdict.growthWinner}
                   </div>
-                  <p className="mt-1 text-xs text-slate-300 leading-relaxed">
+                  <p className="mt-1 text-xs text-txt-dim leading-relaxed">
                     Delivered the highest absolute price appreciation over the selected period.
                   </p>
                 </div>
@@ -655,10 +655,10 @@ export function CompareDashboard() {
                     </span>
                     <ShieldCheck className="h-4 w-4 text-purple-400" />
                   </div>
-                  <div className="mt-2 text-2xl font-black text-white">
+                  <div className="mt-2 text-2xl font-black text-txt">
                     {aiAnalysis.aiVerdict.valueOrDefensiveWinner}
                   </div>
-                  <p className="mt-1 text-xs text-slate-300 leading-relaxed">
+                  <p className="mt-1 text-xs text-txt-dim leading-relaxed">
                     Lowest annualized volatility; best suited for downside risk mitigation.
                   </p>
                 </div>
@@ -667,33 +667,33 @@ export function CompareDashboard() {
               {/* Comprehensive Row x Column Comparison Matrix */}
               <div>
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-blue-400" />
+                  <h3 className="text-sm font-bold text-txt flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-accent" />
                     Multi-Company Performance & Fundamental Matrix
                   </h3>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-txt-dim">
                     Leader highlighted per category
                   </span>
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-white/[0.08] bg-black/25">
+                <div className="overflow-x-auto rounded-2xl border border-hairline/[0.08] bg-elevated">
                   <table className="w-full min-w-[700px] text-left text-xs">
                     <thead>
-                      <tr className="border-b border-white/[0.08] text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-white/[0.02]">
+                      <tr className="border-b border-hairline/[0.08] text-[10px] font-bold uppercase tracking-wider text-txt-dim bg-accent/[0.02]">
                         <th className="py-3 px-4">Metric</th>
                         {aiAnalysis.metrics.map((m) => (
-                          <th key={m.symbol} className="py-3 px-4 font-mono text-sm text-white">
+                          <th key={m.symbol} className="py-3 px-4 font-mono text-sm text-txt">
                             {m.symbol}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[0.05]">
+                    <tbody className="divide-y divide-hairline/[0.05]">
                       {/* Price */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">Last Close</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">Last Close</td>
                         {aiAnalysis.metrics.map((m) => (
-                          <td key={m.symbol} className="py-3 px-4 font-mono text-slate-200">
+                          <td key={m.symbol} className="py-3 px-4 font-mono text-txt">
                             ${m.price.toFixed(2)}
                           </td>
                         ))}
@@ -701,21 +701,21 @@ export function CompareDashboard() {
 
                       {/* Period Return */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">Period Return</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">Period Return</td>
                         {aiAnalysis.metrics.map((m) => {
                           const isLead = m.symbol === aiAnalysis.matrixLeaders.highestReturn;
                           return (
                             <td
                               key={m.symbol}
                               className={`py-3 px-4 font-bold ${
-                                m.returnPct >= 0 ? "text-emerald-400" : "text-rose-400"
+                                m.returnPct >= 0 ? "text-up" : "text-down"
                               }`}
                             >
                               <div className="flex items-center gap-1.5">
                                 {m.returnPct >= 0 ? "+" : ""}
                                 {m.returnPct.toFixed(2)}%
                                 {isLead && (
-                                  <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-emerald-300">
+                                  <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-up">
                                     Top
                                   </span>
                                 )}
@@ -727,15 +727,15 @@ export function CompareDashboard() {
 
                       {/* Volatility */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">Annualized Volatility</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">Annualized Volatility</td>
                         {aiAnalysis.metrics.map((m) => {
                           const isLead = m.symbol === aiAnalysis.matrixLeaders.lowestVolatility;
                           return (
-                            <td key={m.symbol} className="py-3 px-4 font-mono text-slate-300">
+                            <td key={m.symbol} className="py-3 px-4 font-mono text-txt-dim">
                               <div className="flex items-center gap-1.5">
                                 {m.volatility.toFixed(1)}%
                                 {isLead && (
-                                  <span className="rounded bg-blue-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-blue-300">
+                                  <span className="rounded bg-[color:var(--accent-soft)] px-1 py-0.5 text-[9px] uppercase font-bold text-accent">
                                     Lowest
                                   </span>
                                 )}
@@ -747,11 +747,11 @@ export function CompareDashboard() {
 
                       {/* Sharpe */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">Sharpe Ratio (4% Rf)</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">Sharpe Ratio (4% Rf)</td>
                         {aiAnalysis.metrics.map((m) => {
                           const isLead = m.symbol === aiAnalysis.matrixLeaders.bestSharpe;
                           return (
-                            <td key={m.symbol} className="py-3 px-4 font-mono text-slate-200">
+                            <td key={m.symbol} className="py-3 px-4 font-mono text-txt">
                               <div className="flex items-center gap-1.5">
                                 {m.sharpeRatio.toFixed(2)}
                                 {isLead && (
@@ -767,27 +767,27 @@ export function CompareDashboard() {
 
                       {/* Technical Health */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">Technical Health</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">Technical Health</td>
                         {aiAnalysis.metrics.map((m) => {
                           const isLead = m.symbol === aiAnalysis.matrixLeaders.highestTechnicalHealth;
                           return (
                             <td key={m.symbol} className="py-3 px-4">
                               <div className="flex items-center gap-2">
-                                <div className="h-1.5 w-16 overflow-hidden rounded-full bg-white/10">
+                                <div className="h-1.5 w-16 overflow-hidden rounded-full bg-elevated">
                                   <div
                                     className={`h-full ${
                                       m.technicalHealth >= 70
                                         ? "bg-emerald-400"
                                         : m.technicalHealth >= 45
-                                        ? "bg-blue-400"
+                                        ? "bg-accent"
                                         : "bg-rose-400"
                                     }`}
                                     style={{ width: `${m.technicalHealth}%` }}
                                   />
                                 </div>
-                                <span className="font-mono text-slate-200">{m.technicalHealth}/100</span>
+                                <span className="font-mono text-txt">{m.technicalHealth}/100</span>
                                 {isLead && (
-                                  <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-emerald-300">
+                                  <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-up">
                                     Top
                                   </span>
                                 )}
@@ -799,12 +799,12 @@ export function CompareDashboard() {
 
                       {/* Analyst Consensus */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">Analyst Consensus</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">Analyst Consensus</td>
                         {aiAnalysis.metrics.map((m) => {
                           const rec = m.analystConsensus;
                           if (!rec) {
                             return (
-                              <td key={m.symbol} className="py-3 px-4 text-slate-500">
+                              <td key={m.symbol} className="py-3 px-4 text-txt-mute">
                                 N/A
                               </td>
                             );
@@ -812,7 +812,7 @@ export function CompareDashboard() {
                           const isLead = m.symbol === aiAnalysis.matrixLeaders.strongestAnalystConsensus;
                           return (
                             <td key={m.symbol} className="py-3 px-4">
-                              <div className="flex items-center gap-1.5 font-bold text-slate-200">
+                              <div className="flex items-center gap-1.5 font-bold text-txt">
                                 {rec.consensusScore >= 4
                                   ? "Strong Buy"
                                   : rec.consensusScore >= 3.5
@@ -820,12 +820,12 @@ export function CompareDashboard() {
                                   : "Hold"}{" "}
                                 ({rec.consensusScore.toFixed(1)}/5)
                                 {isLead && (
-                                  <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-emerald-300">
+                                  <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-up">
                                     Top
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
+                              <div className="text-[10px] text-txt-dim mt-0.5">
                                 {rec.bullishRatio}% Bullish ({rec.total} analysts)
                               </div>
                             </td>
@@ -835,23 +835,23 @@ export function CompareDashboard() {
 
                       {/* Reported Financials */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">SEC Reported Filing</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">SEC Reported Filing</td>
                         {aiAnalysis.metrics.map((m) => {
                           const fin = m.reportedFinancials;
                           if (!fin || !fin.hasData) {
                             return (
-                              <td key={m.symbol} className="py-3 px-4 text-slate-500">
+                              <td key={m.symbol} className="py-3 px-4 text-txt-mute">
                                 Standard SEC Filing
                               </td>
                             );
                           }
                           return (
                             <td key={m.symbol} className="py-3 px-4">
-                              <div className="font-medium text-slate-200">
+                              <div className="font-medium text-txt">
                                 {fin.period || "Quarterly"}
                               </div>
                               {fin.grossProfit && (
-                                <div className="text-[10px] text-slate-400">
+                                <div className="text-[10px] text-txt-dim">
                                   Gross: ${(fin.grossProfit / 1e9).toFixed(1)}B
                                 </div>
                               )}
@@ -862,7 +862,7 @@ export function CompareDashboard() {
 
                       {/* News Sentiment */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-slate-300">News Sentiment</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">News Sentiment</td>
                         {aiAnalysis.metrics.map((m) => {
                           const score = m.newsSummary.sentimentScore;
                           return (
@@ -870,10 +870,10 @@ export function CompareDashboard() {
                               <span
                                 className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
                                   score > 0.15
-                                    ? "bg-emerald-400/20 text-emerald-300"
+                                    ? "bg-emerald-400/20 text-up"
                                     : score < -0.15
-                                    ? "bg-rose-400/20 text-rose-300"
-                                    : "bg-slate-400/20 text-slate-300"
+                                    ? "bg-rose-400/20 text-down"
+                                    : "bg-elevated text-txt-dim"
                                 }`}
                               >
                                 {score > 0.15 ? "Bullish" : score < -0.15 ? "Bearish" : "Neutral"}
@@ -891,24 +891,24 @@ export function CompareDashboard() {
               <div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-amber-400" />
+                    <h3 className="text-sm font-bold text-txt flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-accent" />
                       Detected Technical Patterns (Interactive Canvas Overlays)
                     </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-txt-dim mt-0.5">
                       Click any pattern to focus that company and draw the exact geometric coordinates directly onto the chart overlay!
                     </p>
                   </div>
                   <button
                     onClick={drawAllPatterns}
-                    className="text-xs font-bold text-blue-400 hover:text-blue-300 hover:underline"
+                    className="text-xs font-bold text-accent hover:text-accent hover:underline"
                   >
                     Draw all {aiAnalysis.detectedPatterns.length} patterns
                   </button>
                 </div>
 
                 {aiAnalysis.detectedPatterns.length === 0 ? (
-                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-6 text-center text-xs text-slate-400">
+                  <div className="rounded-2xl border border-hairline/[0.08] bg-elevated p-6 text-center text-xs text-txt-dim">
                     No clear geometric patterns detected within the current range threshold. Switch to 6M or 1Y for richer swing data.
                   </div>
                 ) : (
@@ -918,48 +918,48 @@ export function CompareDashboard() {
                         key={pattern.id}
                         className={`group relative rounded-2xl border p-4 transition-all ${
                           activePatternId === pattern.id
-                            ? "border-amber-400 bg-amber-500/10 shadow-lg shadow-amber-500/10"
-                            : "border-white/[0.08] bg-black/20 hover:border-white/20 hover:bg-white/[0.03]"
+                            ? "border-accent bg-[color:var(--accent-soft)] shadow-lg shadow-amber-500/10"
+                            : "border-hairline/[0.08] bg-elevated hover:border-hairline-strong hover:bg-accent/[0.03]"
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-black uppercase text-blue-300">
+                          <span className="font-mono text-xs font-black uppercase text-accent">
                             {pattern.symbol}
                           </span>
                           <div className="flex items-center gap-1.5">
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
                                 pattern.direction === "bullish"
-                                  ? "bg-emerald-400/20 text-emerald-300"
+                                  ? "bg-emerald-400/20 text-up"
                                   : pattern.direction === "bearish"
-                                  ? "bg-rose-400/20 text-rose-300"
-                                  : "bg-slate-400/20 text-slate-300"
+                                  ? "bg-rose-400/20 text-down"
+                                  : "bg-elevated text-txt-dim"
                               }`}
                             >
                               {pattern.direction}
                             </span>
-                            <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
+                            <span className="rounded bg-accent/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-txt-dim">
                               {pattern.confidence}%
                             </span>
                           </div>
                         </div>
 
-                        <h4 className="mt-2 text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                        <h4 className="mt-2 text-sm font-bold text-txt group-hover:text-accent transition-colors">
                           {pattern.name}
                         </h4>
-                        <p className="mt-1 text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                        <p className="mt-1 text-xs text-txt-dim line-clamp-3 leading-relaxed">
                           {pattern.rationale}
                         </p>
 
                         {(pattern.targetPrice || pattern.entryPrice) && (
-                          <div className="mt-3 flex items-center justify-between border-t border-white/[0.06] pt-2 text-[11px]">
+                          <div className="mt-3 flex items-center justify-between border-t border-hairline/[0.06] pt-2 text-[11px]">
                             {pattern.entryPrice && (
-                              <span className="text-slate-400">
-                                Entry: <strong className="text-slate-200">${pattern.entryPrice.toFixed(2)}</strong>
+                              <span className="text-txt-dim">
+                                Entry: <strong className="text-txt">${pattern.entryPrice.toFixed(2)}</strong>
                               </span>
                             )}
                             {pattern.targetPrice && (
-                              <span className="text-emerald-400 font-semibold">
+                              <span className="text-up font-semibold">
                                 Target: ${pattern.targetPrice.toFixed(2)}
                               </span>
                             )}
@@ -970,8 +970,8 @@ export function CompareDashboard() {
                           onClick={() => applyPatternToCanvas(pattern)}
                           className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-bold transition-all ${
                             activePatternId === pattern.id
-                              ? "border-amber-400 bg-amber-400 text-slate-950 shadow-md"
-                              : "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500 hover:text-white"
+                              ? "border-accent bg-accent text-black shadow-md"
+                              : "border-hairline-strong bg-[color:var(--accent-soft)] text-accent hover:bg-accent hover:text-txt"
                           }`}
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -985,8 +985,8 @@ export function CompareDashboard() {
 
               {/* Analyst Recommendation Trends (Finnhub API) */}
               <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
-                  <TrendingUp className="h-4 w-4 text-emerald-400" />
+                <h3 className="text-sm font-bold text-txt flex items-center gap-2 mb-3">
+                  <TrendingUp className="h-4 w-4 text-up" />
                   Finnhub Analyst Recommendation Trends
                 </h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -996,10 +996,10 @@ export function CompareDashboard() {
                       return (
                         <div
                           key={m.symbol}
-                          className="rounded-2xl border border-white/[0.08] bg-black/20 p-4 text-xs text-slate-400"
+                          className="rounded-2xl border border-hairline/[0.08] bg-elevated p-4 text-xs text-txt-dim"
                         >
-                          <div className="font-mono font-bold text-white">{m.symbol}</div>
-                          <p className="mt-1 text-slate-500">No active analyst recommendations found.</p>
+                          <div className="font-mono font-bold text-txt">{m.symbol}</div>
+                          <p className="mt-1 text-txt-mute">No active analyst recommendations found.</p>
                         </div>
                       );
                     }
@@ -1013,27 +1013,27 @@ export function CompareDashboard() {
                     return (
                       <div
                         key={m.symbol}
-                        className="rounded-2xl border border-white/[0.08] bg-black/20 p-4 space-y-3"
+                        className="rounded-2xl border border-hairline/[0.08] bg-elevated p-4 space-y-3"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-sm font-bold text-white">{m.symbol}</span>
-                          <span className="text-xs font-semibold text-emerald-400">
+                          <span className="font-mono text-sm font-bold text-txt">{m.symbol}</span>
+                          <span className="text-xs font-semibold text-up">
                             {rec.bullishRatio}% Bullish
                           </span>
                         </div>
 
                         {/* Stacked Recommendation Bar */}
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-white/10 flex">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-elevated flex">
                           <div style={{ width: `${strongBuyPct}%` }} className="bg-emerald-500" title={`Strong Buy: ${rec.strongBuy}`} />
                           <div style={{ width: `${buyPct}%` }} className="bg-green-400" title={`Buy: ${rec.buy}`} />
-                          <div style={{ width: `${holdPct}%` }} className="bg-amber-400" title={`Hold: ${rec.hold}`} />
+                          <div style={{ width: `${holdPct}%` }} className="bg-accent" title={`Hold: ${rec.hold}`} />
                           <div style={{ width: `${sellPct}%` }} className="bg-orange-400" title={`Sell: ${rec.sell}`} />
                           <div style={{ width: `${strongSellPct}%` }} className="bg-rose-500" title={`Strong Sell: ${rec.strongSell}`} />
                         </div>
 
-                        <div className="grid grid-cols-5 text-center text-[10px] text-slate-400 font-mono">
+                        <div className="grid grid-cols-5 text-center text-[10px] text-txt-dim font-mono">
                           <div>
-                            <span className="block text-emerald-400 font-bold">{rec.strongBuy}</span>
+                            <span className="block text-up font-bold">{rec.strongBuy}</span>
                             <span>S-Buy</span>
                           </div>
                           <div>
@@ -1041,7 +1041,7 @@ export function CompareDashboard() {
                             <span>Buy</span>
                           </div>
                           <div>
-                            <span className="block text-amber-300 font-bold">{rec.hold}</span>
+                            <span className="block text-accent font-bold">{rec.hold}</span>
                             <span>Hold</span>
                           </div>
                           <div>
@@ -1049,7 +1049,7 @@ export function CompareDashboard() {
                             <span>Sell</span>
                           </div>
                           <div>
-                            <span className="block text-rose-400 font-bold">{rec.strongSell}</span>
+                            <span className="block text-down font-bold">{rec.strongSell}</span>
                             <span>S-Sell</span>
                           </div>
                         </div>
@@ -1061,8 +1061,8 @@ export function CompareDashboard() {
 
               {/* Comparative News & Catalysts */}
               <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
-                  <Newspaper className="h-4 w-4 text-blue-400" />
+                <h3 className="text-sm font-bold text-txt flex items-center gap-2 mb-3">
+                  <Newspaper className="h-4 w-4 text-accent" />
                   Comparative News Catalysts & Risks
                 </h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1071,30 +1071,30 @@ export function CompareDashboard() {
                     return (
                       <div
                         key={nc.symbol}
-                        className="rounded-2xl border border-white/[0.08] bg-black/20 p-4 space-y-2.5"
+                        className="rounded-2xl border border-hairline/[0.08] bg-elevated p-4 space-y-2.5"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-sm font-bold text-white">{nc.symbol}</span>
+                          <span className="font-mono text-sm font-bold text-txt">{nc.symbol}</span>
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
                               nc.sentiment === "bullish"
-                                ? "bg-emerald-400/20 text-emerald-300"
+                                ? "bg-emerald-400/20 text-up"
                                 : nc.sentiment === "bearish"
-                                ? "bg-rose-400/20 text-rose-300"
-                                : "bg-slate-400/20 text-slate-300"
+                                ? "bg-rose-400/20 text-down"
+                                : "bg-elevated text-txt-dim"
                             }`}
                           >
                             {nc.sentiment}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-300 leading-relaxed">{nc.verdict}</p>
+                        <p className="text-xs text-txt-dim leading-relaxed">{nc.verdict}</p>
 
                         {m?.newsSummary.topCatalysts?.length ? (
-                          <div className="pt-2 border-t border-white/[0.06]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                          <div className="pt-2 border-t border-hairline/[0.06]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-up">
                               Primary Catalyst:
                             </span>
-                            <p className="text-[11px] text-slate-300 line-clamp-2 mt-0.5">
+                            <p className="text-[11px] text-txt-dim line-clamp-2 mt-0.5">
                               {m.newsSummary.topCatalysts[0]}
                             </p>
                           </div>
@@ -1111,20 +1111,20 @@ export function CompareDashboard() {
 
       {/* Comparison Snapshot & Feed Section */}
       <div className="grid gap-6 xl:grid-cols-[1.45fr_.85fr]">
-        <section className="rounded-3xl border border-white/[0.08] bg-[#11141c] p-5 sm:p-6">
+        <section className="rounded-3xl border border-hairline/[0.08] bg-panel p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-bold text-white">Comparison Snapshot</h2>
-              <p className="mt-1 text-xs text-slate-400">
+              <h2 className="font-bold text-txt">Comparison Snapshot</h2>
+              <p className="mt-1 text-xs text-txt-dim">
                 Close, period return, high and average volume.
               </p>
             </div>
             {leader && (
               <div className="hidden rounded-xl bg-emerald-400/10 px-3 py-2 text-right sm:block border border-emerald-400/20">
-                <div className="text-[10px] uppercase tracking-wider text-emerald-300 font-bold">
+                <div className="text-[10px] uppercase tracking-wider text-up font-bold">
                   Period leader
                 </div>
-                <div className="text-sm font-bold text-emerald-100">
+                <div className="text-sm font-bold text-up">
                   {leader.symbol} · {leader.returnPct >= 0 ? "+" : ""}
                   {leader.returnPct.toFixed(1)}%
                 </div>
@@ -1133,7 +1133,7 @@ export function CompareDashboard() {
           </div>
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="border-b border-white/[.08] text-[10px] uppercase tracking-wider text-slate-500">
+              <thead className="border-b border-hairline/[.08] text-[10px] uppercase tracking-wider text-txt-mute">
                 <tr>
                   <th className="pb-3 font-semibold">Symbol</th>
                   <th className="pb-3 font-semibold">Last close</th>
@@ -1146,28 +1146,28 @@ export function CompareDashboard() {
                 {metrics.map((metric) => (
                   <tr
                     key={metric.symbol}
-                    className="border-b border-white/[.05] last:border-0"
+                    className="border-b border-hairline/[.05] last:border-0"
                   >
-                    <td className="py-3 font-mono font-bold text-white">
+                    <td className="py-3 font-mono font-bold text-txt">
                       {metric.symbol}
                     </td>
-                    <td className="py-3 text-slate-200">
+                    <td className="py-3 text-txt">
                       ${metric.price.toFixed(2)}
                     </td>
                     <td
                       className={`py-3 font-semibold ${
                         metric.returnPct >= 0
-                          ? "text-emerald-400"
-                          : "text-rose-400"
+                          ? "text-up"
+                          : "text-down"
                       }`}
                     >
                       {metric.returnPct >= 0 ? "+" : ""}
                       {metric.returnPct.toFixed(2)}%
                     </td>
-                    <td className="py-3 text-slate-300">
+                    <td className="py-3 text-txt-dim">
                       ${metric.high.toFixed(2)}
                     </td>
-                    <td className="py-3 text-right font-mono text-slate-400">
+                    <td className="py-3 text-right font-mono text-txt-dim">
                       {Math.round(metric.volume).toLocaleString()}
                     </td>
                   </tr>
@@ -1177,19 +1177,19 @@ export function CompareDashboard() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-white/[0.08] bg-[#11141c] p-5 sm:p-6">
+        <section className="rounded-3xl border border-hairline/[0.08] bg-panel p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-blue-300">
+              <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-accent">
                 <Newspaper className="h-4 w-4" /> Company news
               </p>
-              <h2 className="mt-1 font-bold text-white">Latest on {newsSymbol}</h2>
+              <h2 className="mt-1 font-bold text-txt">Latest on {newsSymbol}</h2>
             </div>
             <select
               aria-label="Company for news"
               value={newsSymbol}
               onChange={(event) => setNewsSymbol(event.target.value)}
-              className="rounded-lg border border-white/[.1] bg-black/20 px-2 py-1.5 text-xs font-bold text-white outline-none"
+              className="rounded-lg border border-hairline/[.1] bg-elevated px-2 py-1.5 text-xs font-bold text-txt outline-none"
             >
               {COMPANIES.map(([symbol]) => (
                 <option key={symbol} value={symbol}>
@@ -1214,15 +1214,15 @@ function NewsList({
 }) {
   if (loading)
     return (
-      <div className="py-12 text-center text-sm text-slate-400">
+      <div className="py-12 text-center text-sm text-txt-dim">
         Loading news…
       </div>
     );
   if (!items.length)
     return (
-      <div className="py-10 text-center text-sm text-slate-400">
+      <div className="py-10 text-center text-sm text-txt-dim">
         No recent company news is available. Add{" "}
-        <code className="rounded bg-white/[.06] px-1.5 py-0.5 text-slate-300">
+        <code className="rounded bg-accent/[.06] px-1.5 py-0.5 text-txt-dim">
           FINNHUB_API_KEY
         </code>{" "}
         to enable this feed.
@@ -1236,7 +1236,7 @@ function NewsList({
           href={item.url}
           target="_blank"
           rel="noreferrer"
-          className="group block rounded-2xl border border-white/[.06] bg-black/15 p-3 transition-colors hover:border-blue-400/40 hover:bg-blue-400/[.04]"
+          className="group block rounded-2xl border border-hairline/[.06] bg-elevated p-3 transition-colors hover:border-accent hover:bg-accent/[.04]"
         >
           <div className="flex gap-3">
             {item.image ? (
@@ -1249,15 +1249,15 @@ function NewsList({
                 className="h-14 w-14 rounded-xl object-cover"
               />
             ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[color:var(--accent-soft)] text-accent">
                 <Newspaper className="h-5 w-5" />
               </div>
             )}
             <div className="min-w-0">
-              <p className="line-clamp-2 text-sm font-semibold leading-5 text-slate-100 group-hover:text-blue-200">
+              <p className="line-clamp-2 text-sm font-semibold leading-5 text-txt group-hover:text-accent">
                 {item.headline}
               </p>
-              <p className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+              <p className="mt-1 flex items-center gap-2 text-[11px] text-txt-mute">
                 <span>{item.source || "News"}</span>
                 {item.datetime ? (
                   <>

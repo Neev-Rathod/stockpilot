@@ -1,13 +1,18 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import type { Holding, PortfolioState, Transaction, PriceAlert } from "@/lib/types";
-
+import type { PortfolioState, PriceAlert } from "@/lib/types";
+import { buy as buyLogic, sell as sellLogic } from "@/lib/portfolio-logic";
+import { loadPortfolio } from "@/lib/supabase/queries";
+import * as persist from "@/lib/supabase/persist";
 
 const DEFAULT_BALANCE = 100000;
 
 interface PortfolioStore extends PortfolioState {
   favorites: string[];
   alerts: PriceAlert[];
+  userId: string | null;
+  hydrated: boolean;
+  hydrate: (userId: string) => Promise<void>;
+  clear: () => void;
   toggleFavorite: (symbol: string) => void;
   buyStock: (
     symbol: string,
@@ -30,181 +35,147 @@ interface PortfolioStore extends PortfolioState {
   getAlerts: () => PriceAlert[];
 }
 
+function newId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
-export const usePortfolioStore = create<PortfolioStore>()(
-  persist(
-    (set, get) => ({
+export const usePortfolioStore = create<PortfolioStore>()((set, get) => ({
+  virtualBalance: DEFAULT_BALANCE,
+  holdings: [],
+  transactions: [],
+  favorites: [],
+  alerts: [],
+  userId: null,
+  hydrated: false,
+
+  // Load the signed-in user's state from Supabase into the store.
+  hydrate: async (userId) => {
+    try {
+      const data = await loadPortfolio(userId);
+      set({
+        userId,
+        hydrated: true,
+        virtualBalance: data.virtualBalance,
+        holdings: data.holdings,
+        transactions: data.transactions,
+        favorites: data.favorites,
+        alerts: data.alerts,
+      });
+    } catch (error) {
+      console.error("[stockpilot] Failed to hydrate portfolio:", error);
+      set({ userId, hydrated: true });
+    }
+  },
+
+  // Reset to a logged-out empty state.
+  clear: () => {
+    set({
+      userId: null,
+      hydrated: false,
       virtualBalance: DEFAULT_BALANCE,
       holdings: [],
       transactions: [],
       favorites: [],
       alerts: [],
+    });
+  },
 
-      toggleFavorite: (symbol) => {
-        const cleaned = symbol.toUpperCase();
-        const favorites = get().favorites;
-        const exists = favorites.includes(cleaned);
-        set({
-          favorites: exists
-            ? favorites.filter((entry) => entry !== cleaned)
-            : [...favorites, cleaned],
-        });
-      },
-      buyStock: (symbol, companyName, quantity, price) => {
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          return {
-            success: false,
-            message: "Quantity must be a positive number.",
-          };
-        }
-        if (!Number.isFinite(price) || price <= 0) {
-          return { success: false, message: "Price is invalid." };
-        }
+  toggleFavorite: (symbol) => {
+    const cleaned = symbol.toUpperCase();
+    const { favorites, userId } = get();
+    const exists = favorites.includes(cleaned);
+    set({
+      favorites: exists
+        ? favorites.filter((entry) => entry !== cleaned)
+        : [...favorites, cleaned],
+    });
+    if (userId) {
+      if (exists) void persist.removeWatchlist(userId, cleaned);
+      else void persist.addWatchlist(userId, cleaned);
+    }
+  },
 
-        const totalCost = quantity * price;
-        const { virtualBalance, holdings } = get();
-        if (totalCost > virtualBalance) {
-          return { success: false, message: "Insufficient virtual balance." };
-        }
+  buyStock: (symbol, companyName, quantity, price) => {
+    const { virtualBalance, holdings, transactions, userId } = get();
+    const result = buyLogic(
+      { virtualBalance, holdings, transactions },
+      symbol,
+      companyName,
+      quantity,
+      price,
+    );
+    if (!result.success || !result.state || !result.transaction) {
+      return { success: false, message: result.message };
+    }
+    set(result.state);
+    if (userId) {
+      const holding = result.state.holdings.find((h) => h.symbol === symbol);
+      if (holding) {
+        void persist.persistBuy(userId, holding, result.state.virtualBalance, result.transaction);
+      }
+    }
+    return { success: true, message: result.message };
+  },
 
-        const existingIndex = holdings.findIndex(
-          (holding) => holding.symbol === symbol,
-        );
-        const currentHolding =
-          existingIndex >= 0 ? holdings[existingIndex] : null;
-        const newQuantity = (currentHolding?.quantity ?? 0) + quantity;
-        const newAverage = currentHolding
-          ? (currentHolding.averageBuyPrice * currentHolding.quantity +
-              quantity * price) /
-            newQuantity
-          : price;
+  sellStock: (symbol, quantity, price) => {
+    const { virtualBalance, holdings, transactions, userId } = get();
+    const result = sellLogic(
+      { virtualBalance, holdings, transactions },
+      symbol,
+      quantity,
+      price,
+    );
+    if (!result.success || !result.state || !result.transaction) {
+      return { success: false, message: result.message };
+    }
+    set(result.state);
+    if (userId) {
+      const remaining = result.state.holdings.find((h) => h.symbol === symbol)?.quantity ?? 0;
+      void persist.persistSell(userId, symbol, remaining, result.state.virtualBalance, result.transaction);
+    }
+    return { success: true, message: result.message };
+  },
 
-        const nextHoldings = [...holdings];
-        if (currentHolding) {
-          nextHoldings[existingIndex] = {
-            ...currentHolding,
-            quantity: newQuantity,
-            averageBuyPrice: newAverage,
-          };
-        } else {
-          nextHoldings.push({
-            symbol,
-            companyName,
-            quantity,
-            averageBuyPrice: price,
-          });
-        }
+  resetPortfolio: () => {
+    set({ virtualBalance: DEFAULT_BALANCE, holdings: [], transactions: [] });
+    const { userId } = get();
+    if (userId) void persist.persistReset(userId);
+  },
 
-        const tx: Transaction = {
-          id: `${symbol}-${Date.now()}`,
-          symbol,
-          type: "buy",
-          quantity,
-          price,
-          timestamp: new Date().toISOString(),
-        };
+  setAlert: (symbol, targetPrice, condition) => {
+    const cleaned = symbol.toUpperCase();
+    if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+      return { success: false, message: "Invalid target price." };
+    }
+    const alert: PriceAlert = {
+      id: newId(),
+      symbol: cleaned,
+      targetPrice,
+      condition,
+      createdAt: new Date().toISOString(),
+      triggered: false,
+    };
+    set({ alerts: [...get().alerts, alert] });
+    const { userId } = get();
+    if (userId) void persist.addAlert(userId, alert);
+    return {
+      success: true,
+      message: `Alert set: notify when ${cleaned} goes ${condition} $${targetPrice.toFixed(2)}.`,
+      alert,
+    };
+  },
 
-        set({
-          virtualBalance: Number((virtualBalance - totalCost).toFixed(2)),
-          holdings: nextHoldings,
-          transactions: [tx, ...get().transactions],
-        });
+  removeAlert: (id) => {
+    set({ alerts: get().alerts.filter((a) => a.id !== id) });
+    const { userId } = get();
+    if (userId) void persist.removeAlert(userId, id);
+  },
 
-        return {
-          success: true,
-          message: `Successfully simulated purchase of ${quantity} shares of ${symbol}.`,
-        };
-      },
-      sellStock: (symbol, quantity, price) => {
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          return {
-            success: false,
-            message: "Quantity must be a positive number.",
-          };
-        }
-        const { virtualBalance, holdings, transactions } = get();
-        const holding = holdings.find((item) => item.symbol === symbol);
-        if (!holding) {
-          return { success: false, message: `You do not own ${symbol}.` };
-        }
-        if (quantity > holding.quantity) {
-          return {
-            success: false,
-            message: "You cannot sell more than you own.",
-          };
-        }
-
-        const nextQuantity = holding.quantity - quantity;
-        const nextHoldings = holdings.filter(
-          (item) => item.symbol !== symbol || nextQuantity > 0,
-        );
-        const transaction: Transaction = {
-          id: `${symbol}-${Date.now()}-sell`,
-          symbol,
-          type: "sell",
-          quantity,
-          price,
-          timestamp: new Date().toISOString(),
-        };
-
-        set({
-          virtualBalance: Number(
-            (virtualBalance + quantity * price).toFixed(2),
-          ),
-          holdings: nextHoldings,
-          transactions: [transaction, ...transactions],
-        });
-
-        return {
-          success: true,
-          message: `Successfully simulated sale of ${quantity} shares of ${symbol}.`,
-        };
-      },
-      resetPortfolio: () => {
-        set({
-          virtualBalance: DEFAULT_BALANCE,
-          holdings: [],
-          transactions: [],
-        });
-      },
-      setAlert: (symbol, targetPrice, condition) => {
-        const cleaned = symbol.toUpperCase();
-        if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
-          return { success: false, message: "Invalid target price." };
-        }
-        const alert: PriceAlert = {
-          id: `alert-${cleaned}-${Date.now()}`,
-          symbol: cleaned,
-          targetPrice,
-          condition,
-          createdAt: new Date().toISOString(),
-          triggered: false,
-        };
-        set({ alerts: [...get().alerts, alert] });
-        return {
-          success: true,
-          message: `Alert set: notify when ${cleaned} goes ${condition} $${targetPrice.toFixed(2)}.`,
-          alert,
-        };
-      },
-      removeAlert: (id) => {
-        set({ alerts: get().alerts.filter((a) => a.id !== id) });
-      },
-      getAlerts: () => get().alerts,
-    }),
-    {
-      name: "stockpilot-portfolio",
-      partialize: (state) => ({
-        virtualBalance: state.virtualBalance,
-        holdings: state.holdings,
-        transactions: state.transactions,
-        favorites: state.favorites,
-        alerts: state.alerts,
-      }),
-    },
-
-  ),
-);
+  getAlerts: () => get().alerts,
+}));
 
 export const portfolioInitialState: PortfolioState = {
   virtualBalance: DEFAULT_BALANCE,

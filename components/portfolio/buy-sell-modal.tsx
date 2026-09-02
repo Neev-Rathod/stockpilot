@@ -1,254 +1,217 @@
 "use client";
 
-import { useState } from "react";
-import { X, Wallet, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { X, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { usePortfolioStore } from "@/lib/portfolio-store";
+import { formatUsd } from "@/lib/format";
+import { Button, Segmented, cn } from "@/components/ui/kit";
 
 export function BuySellModal({
   mode,
   symbol,
+  companyName,
   currentPrice,
   onClose,
   onConfirm,
 }: {
   mode: "buy" | "sell";
   symbol: string;
+  companyName?: string;
   currentPrice: number;
   onClose: () => void;
-  onConfirm: (
-    quantity: number,
-    orderType: string,
-    executionType: string,
-  ) => void;
+  onConfirm: (quantity: number) => void;
 }) {
-  const [quantity, setQuantity] = useState(1);
-  const [orderType, setOrderType] = useState(
-    mode === "buy" ? "Intraday" : "Delivery",
-  );
-  const [executionType, setExecutionType] = useState("Market");
-  const totalCost = quantity * currentPrice;
+  const virtualBalance = usePortfolioStore((s) => s.virtualBalance);
+  const holdings = usePortfolioStore((s) => s.holdings);
+  const owned = holdings.find((h) => h.symbol === symbol)?.quantity ?? 0;
 
-  const productOptions =
-    mode === "buy"
-      ? [
-          { value: "CNC", label: "Delivery", detail: "Hold overnight" },
-          { value: "MIS", label: "Intraday", detail: "Square off today" },
-          { value: "MTF", label: "MTF", detail: "Buy with leverage" },
-        ]
-      : [
-          { value: "CNC", label: "Delivery", detail: "Sell holdings" },
-          { value: "MIS", label: "Intraday", detail: "Square off today" },
-        ];
+  const [inputMode, setInputMode] = useState<"shares" | "amount">("shares");
+  const [shares, setShares] = useState(1);
+  const [amount, setAmount] = useState(currentPrice);
 
-  const executionOptions = ["Market", "Limit", "Stop Loss", "SL-M"];
+  // Resolve the effective whole-share quantity from whichever input is active.
+  const quantity = useMemo(() => {
+    if (inputMode === "amount") return Math.floor(amount / currentPrice) || 0;
+    return Math.max(0, Math.floor(shares));
+  }, [inputMode, amount, shares, currentPrice]);
+
+  const estValue = quantity * currentPrice;
+  const isBuy = mode === "buy";
+  const maxShares = isBuy ? Math.floor(virtualBalance / currentPrice) : owned;
+
+  const error = useMemo(() => {
+    if (quantity <= 0) return "Enter a quantity.";
+    if (isBuy && estValue > virtualBalance) return "Not enough buying power.";
+    if (!isBuy && quantity > owned) return `You only own ${owned} share${owned === 1 ? "" : "s"}.`;
+    return null;
+  }, [quantity, estValue, isBuy, virtualBalance, owned]);
+
+  function applyPercent(pct: number) {
+    const qty = Math.max(1, Math.floor(maxShares * pct));
+    setInputMode("shares");
+    setShares(qty);
+  }
 
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop overlay */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm"
         />
 
-        {/* Modal Dialog */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          initial={{ opacity: 0, scale: 0.97, y: 8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
-          className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-2xl sm:p-7"
+          exit={{ opacity: 0, scale: 0.97, y: 8 }}
+          transition={{ duration: 0.16, ease: "easeOut" }}
+          className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-panel shadow-2xl"
         >
-          {/* Top glow accent */}
-          <div
-            className={`absolute -top-12 left-1/2 -translate-x-1/2 h-24 w-48 rounded-full blur-2xl pointer-events-none ${
-              mode === "buy" ? "bg-emerald-500/20" : "bg-rose-500/20"
-            }`}
-          />
-
-          <div className="flex items-center justify-between gap-3 relative z-10">
-            <div>
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                <Wallet className="h-3 w-3 text-blue-400" />
-                Virtual Execution
-              </div>
-              <h3 className="mt-1 flex items-center gap-2 text-xl font-semibold tracking-tight text-white sm:text-2xl">
-                {mode === "buy" ? (
-                  <span className="text-emerald-400">Simulated Buy Order</span>
-                ) : (
-                  <span className="text-rose-400">Simulated Sell Order</span>
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-hairline px-5 py-4">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={cn(
+                  "inline-flex h-7 items-center rounded-md px-2 text-xs font-bold uppercase",
+                  isBuy ? "bg-[color:rgba(22,199,132,0.15)] text-up" : "bg-[color:rgba(234,57,67,0.15)] text-down",
                 )}
-              </h3>
+              >
+                {isBuy ? "Buy" : "Sell"}
+              </span>
+              <div>
+                <div className="font-mono text-sm font-bold text-txt">{symbol}</div>
+                {companyName && <div className="text-[11px] text-txt-mute">{companyName}</div>}
+              </div>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-white/10 bg-slate-800/60 p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              aria-label="Close"
+              className="rounded-md p-1.5 text-txt-mute transition hover:bg-elevated hover:text-txt"
             >
               <X size={16} />
             </button>
           </div>
 
-          <div className="mt-6 space-y-4 relative z-10">
-            {/* Stock details panel */}
-            <div className="rounded-xl border border-white/[0.06] bg-slate-950/60 p-4">
-              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
-                Target asset
+          <div className="space-y-4 p-5">
+            {/* Price + capacity */}
+            <div className="flex items-center justify-between rounded-lg border border-hairline bg-elevated px-4 py-3">
+              <div>
+                <div className="text-[11px] text-txt-mute">Market price</div>
+                <div className="font-mono text-lg font-bold tnum text-txt">{formatUsd(currentPrice)}</div>
               </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div className="font-mono text-lg font-semibold text-white">
-                  {symbol}
-                </div>
-                <div className="font-mono text-sm font-semibold text-slate-200">
-                  ${currentPrice.toFixed(2)}{" "}
-                  <span className="font-sans text-xs font-normal text-slate-500">
-                    per share
-                  </span>
+              <div className="text-right">
+                <div className="text-[11px] text-txt-mute">{isBuy ? "Buying power" : "Shares owned"}</div>
+                <div className="font-mono text-sm font-semibold tnum text-txt">
+                  {isBuy ? formatUsd(virtualBalance) : owned}
                 </div>
               </div>
             </div>
 
-            <div className="space-y-5">
-              <div>
-                <div className="mb-2 flex items-baseline justify-between">
-                  <div className="text-sm font-semibold text-slate-200">
-                    Product
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    How this trade is held
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {productOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setOrderType(option.value)}
-                      className={`rounded-xl border px-3 py-2.5 text-left transition ${
-                        orderType === option.value
-                          ? "border-blue-400/70 bg-blue-500/15 text-white shadow-[inset_0_0_0_1px_rgba(96,165,250,0.15)]"
-                          : "border-white/10 bg-slate-800/50 text-slate-300 hover:border-white/20 hover:text-white"
-                      }`}
-                    >
-                      <span className="block text-xs font-semibold">
-                        {option.label}
-                      </span>
-                      <span className="mt-1 block text-[10px] font-normal leading-tight text-slate-500">
-                        {option.detail}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-baseline justify-between">
-                  <div className="text-sm font-semibold text-slate-200">
-                    Order type
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    How the price is placed
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {executionOptions.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => setExecutionType(option)}
-                      className={`rounded-xl border px-2.5 py-2 text-xs font-semibold transition ${
-                        executionType === option
-                          ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-200"
-                          : "border-white/10 bg-slate-800/50 text-slate-300 hover:border-white/20 hover:text-white"
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* Shares / amount toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-txt">Order</span>
+              <Segmented
+                options={[
+                  { value: "shares", label: "Shares" },
+                  { value: "amount", label: "Amount" },
+                ]}
+                value={inputMode}
+                onChange={setInputMode}
+              />
             </div>
 
-            {/* Quantity Input */}
-            <label className="block space-y-2">
-              <span className="block text-sm font-semibold text-slate-200">
-                Quantity
-              </span>
+            {inputMode === "shares" ? (
               <input
                 type="number"
                 min={1}
                 step={1}
-                value={quantity}
-                onChange={(event) =>
-                  setQuantity(Math.max(1, Number(event.target.value)))
-                }
-                className="w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-lg font-semibold text-white outline-none transition-all focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
+                value={shares}
+                onChange={(e) => setShares(Math.max(0, Number(e.target.value)))}
+                className="w-full rounded-lg border border-hairline bg-app px-4 py-3 font-mono text-lg font-bold text-txt outline-none focus:border-accent"
+                placeholder="Shares"
               />
-            </label>
+            ) : (
+              <div className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 font-mono text-lg text-txt-mute">$</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={amount}
+                  onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))}
+                  className="w-full rounded-lg border border-hairline bg-app py-3 pl-8 pr-4 font-mono text-lg font-bold text-txt outline-none focus:border-accent"
+                  placeholder="Amount"
+                />
+              </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-[#1e2027] bg-[#101217] p-3 text-xs text-slate-400">
-              <div className="flex items-center justify-between">
-                <span>Product</span>
-                <span className="font-semibold text-white">
-                  {
-                    productOptions.find((option) => option.value === orderType)
-                      ?.label
-                  }
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Execution</span>
-                <span className="font-semibold text-white">
-                  {executionType}
-                </span>
-              </div>
+            {/* Quick % chips */}
+            <div className="grid grid-cols-4 gap-2">
+              {[0.25, 0.5, 0.75, 1].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => applyPercent(pct)}
+                  className="rounded-md border border-hairline bg-elevated py-1.5 text-xs font-semibold text-txt-dim transition hover:border-hairline-strong hover:text-txt"
+                >
+                  {pct === 1 ? "Max" : `${pct * 100}%`}
+                </button>
+              ))}
             </div>
 
-            {/* Total summary panel */}
-            <div className="rounded-2xl border border-white/[0.08] bg-blue-500/5 p-4">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>Estimated Transaction Value</span>
-                <span className="text-xs font-medium text-emerald-400 flex items-center gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5" /> No Real Funds
-                </span>
-              </div>
-              <div className="mt-2 text-2xl font-black text-white font-mono">
-                $
-                {totalCost.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </div>
+            {/* Summary */}
+            <div className="space-y-2 rounded-lg border border-hairline bg-elevated px-4 py-3 text-sm">
+              <Row label="Order type" value="Market" />
+              <Row label="Quantity" value={`${quantity} share${quantity === 1 ? "" : "s"}`} />
+              <Row
+                label={isBuy ? "Estimated cost" : "Estimated proceeds"}
+                value={formatUsd(estValue)}
+                strong
+              />
+              {isBuy && (
+                <Row label="Cash after" value={formatUsd(Math.max(0, virtualBalance - estValue))} />
+              )}
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 rounded-xl border border-white/10 bg-slate-800/80 px-4 py-3 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
-              >
+            {error && <div className="text-xs font-medium text-down">{error}</div>}
+
+            <div className="flex items-center gap-1.5 text-[11px] text-txt-mute">
+              <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+              Paper trade — simulated with virtual funds, no real money.
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" className="flex-1" onClick={onClose}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => onConfirm(quantity, orderType, executionType)}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-bold font-mono transition-transform active:scale-95 shadow-lg ${
-                  mode === "buy"
-                    ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 hover:from-emerald-400 hover:to-teal-400 emerald-glow"
-                    : "bg-gradient-to-r from-rose-500 to-red-600 text-white hover:from-rose-400 hover:to-red-500"
-                }`}
+              </Button>
+              <Button
+                variant={isBuy ? "up" : "down"}
+                className="flex-1"
+                disabled={Boolean(error)}
+                onClick={() => onConfirm(quantity)}
               >
-                <CheckCircle2 className="h-4 w-4" />
-                {mode === "buy" ? "Confirm Purchase" : "Confirm Sale"}
-              </button>
+                {isBuy ? "Buy" : "Sell"} {quantity > 0 ? quantity : ""} {symbol}
+              </Button>
             </div>
           </div>
         </motion.div>
       </div>
     </AnimatePresence>
+  );
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-txt-mute">{label}</span>
+      <span className={cn("font-mono tnum", strong ? "text-base font-bold text-txt" : "text-txt-dim")}>
+        {value}
+      </span>
+    </div>
   );
 }

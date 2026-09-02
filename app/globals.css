@@ -1,21 +1,50 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────
+   StockPilot design system — black & gold (institutional)
+   One accent (gold). Emerald/red reserved strictly for P&L.
+   ───────────────────────────────────────────────────────────── */
 :root {
-  --background: #090a0d;
-  --foreground: #ffffff;
-  --card: #131418;
-  --card-hover: #191a20;
-  --card-border: #22232a;
-  --sidebar: #101115;
-  --muted: #838590;
-  --primary-blue: #1d6cf6;
-  --green: #22c55e;
-  --red: #ef4444;
+  /* Surfaces (near-black slate, layered) */
+  --app: #0a0b0d;
+  --panel: #12141a;
+  --elevated: #181b23;
+  --hairline: #242833;
+  --hairline-strong: #2f3441;
+
+  /* Text */
+  --txt: #eaecef;
+  --txt-dim: #9aa0ab;
+  --txt-mute: #62697a;
+
+  /* Brand accent — gold (matches the logo) */
+  --accent: #f5b70a;
+  --accent-hover: #ffc93c;
+  --accent-soft: rgba(245, 183, 10, 0.12);
+  --on-accent: #0a0b0d;
+
+  /* P&L only */
+  --up: #16c784;
+  --down: #ea3943;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-app: var(--app);
+  --color-panel: var(--panel);
+  --color-elevated: var(--elevated);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-txt: var(--txt);
+  --color-txt-dim: var(--txt-dim);
+  --color-txt-mute: var(--txt-mute);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-up: var(--up);
+  --color-down: var(--down);
+
+  --color-background: var(--app);
+  --color-foreground: var(--txt);
+
   --font-sans:
     var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, sans-serif;
@@ -30,10 +59,11 @@
 
 html,
 body {
-  background-color: #090a0d;
-  color: #ffffff;
+  background-color: var(--app);
+  color: var(--txt);
   font-family: var(--font-sans);
   scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -43,45 +73,62 @@ select {
 }
 
 ::selection {
-  background: rgba(29, 108, 246, 0.35);
-  color: #ffffff;
+  background: var(--accent-soft);
+  color: var(--txt);
 }
 
-/* Custom dark scrollbar matching reference mockups */
-.dark-scrollbar::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+/* Focus ring for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.dark-scrollbar::-webkit-scrollbar-track {
-  background: #090a0d;
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-
-.dark-scrollbar::-webkit-scrollbar-thumb {
-  background: #252730;
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2f3a;
   border-radius: 999px;
 }
-
-.dark-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #373945;
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4150;
 }
 
-/* Panel card styling matching reference images */
+/* ── Legacy compatibility (secondary pages inherit the new look until
+   they are individually redesigned) ─────────────────────────────── */
 .dark-card {
-  background-color: #131418;
-  border: 1px solid #1e2027;
-  border-radius: 1rem;
+  background-color: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 0.875rem;
 }
 
-/* Button styling matching reference images */
 .btn-blue {
-  background-color: #1d6cf6;
-  color: #ffffff;
-  border-radius: 9999px;
-  font-weight: 500;
+  background-color: var(--accent);
+  color: var(--on-accent);
+  border-radius: 0.625rem;
+  font-weight: 600;
   transition: background-color 0.15s ease;
 }
-
 .btn-blue:hover {
-  background-color: #145ad4;
+  background-color: var(--accent-hover);
+}
+
+/* Tabular figures for all numeric/mono text so columns align */
+.font-mono,
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* SEC report highlight marker (yellow) */
+mark.sp-hl,
+.sp-report .sp-hl {
+  background: #ffe14d;
+  color: #14171f;
+  padding: 0 2px;
+  border-radius: 2px;
 }

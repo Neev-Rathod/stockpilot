@@ -10,6 +10,12 @@ import {
 } from "@/lib/finnhub/client";
 import { getLocalOhlcv } from "@/lib/ohlcv";
 import {
+  annualizedVolatility,
+  maxDrawdown,
+  riskScore as computeRiskScore,
+  type FilingAnalysis,
+} from "@/lib/sec-analysis";
+import {
   analyzeComparison,
   detectPatternsForSymbol,
   type ChartDrawing,
@@ -742,6 +748,12 @@ export const webMcpTools: WebMcpTool[] = [
           type: "number",
           description: "Number of recent filings to consider (default 10)",
         },
+        highlight: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional phrases to highlight in yellow in the opened report, in addition to auto-detected figures, dates, and risk language",
+        },
       },
       required: ["symbol"],
     },
@@ -762,6 +774,9 @@ export const webMcpTools: WebMcpTool[] = [
 
       const days = Number(params.days ?? 30);
       const limit = Number(params.limit ?? 10);
+      const highlight = Array.isArray(params.highlight)
+        ? params.highlight.map((h) => String(h))
+        : [];
       const to = new Date();
       const from = new Date(
         to.getTime() - Math.max(1, days) * 24 * 60 * 60 * 1000,
@@ -850,6 +865,61 @@ export const webMcpTools: WebMcpTool[] = [
         reportPayload.kind ?? "text",
       );
 
+      // ── StockPilot: risk score + inline UI highlight. Best-effort and fully
+      // guarded so this addition can never break the existing tool output. ──
+      let riskAnalysis: FilingAnalysis | null = null;
+      try {
+        const ohlcv = await getLocalOhlcv([symbol]);
+        const closes = ohlcv[0]?.candles?.map((c) => c.close) ?? [];
+        const [profile, recs] = await Promise.all([
+          getCompanyProfile(symbol),
+          getRecommendationTrends(symbol),
+        ]);
+        const latestRec = recs?.[0] ?? null;
+        const totalRec = latestRec
+          ? latestRec.strongBuy + latestRec.buy + latestRec.hold + latestRec.sell + latestRec.strongSell
+          : 0;
+        const bullishRatio =
+          latestRec && totalRec > 0 ? (latestRec.strongBuy + latestRec.buy) / totalRec : null;
+        const volatility = annualizedVolatility(closes);
+        const drawdown = maxDrawdown(closes);
+        const risk = computeRiskScore({ volatility, drawdown, bullishRatio });
+        riskAnalysis = {
+          symbol,
+          score: risk.score,
+          rating: risk.rating,
+          volatility: +volatility.toFixed(1),
+          maxDrawdown: +drawdown.toFixed(1),
+          components: risk.components,
+          marketCap: profile?.marketCapitalization ?? null,
+          industry: profile?.finnhubIndustry ?? null,
+          recommendation: latestRec
+            ? {
+                strongBuy: latestRec.strongBuy,
+                buy: latestRec.buy,
+                hold: latestRec.hold,
+                sell: latestRec.sell,
+                strongSell: latestRec.strongSell,
+              }
+            : null,
+        };
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:sec-analyze", {
+              detail: {
+                symbol,
+                highlight,
+                reportUrl: reportUrl ?? null,
+                accessNumber: selectedFiling.accessNumber ?? null,
+                analysis: riskAnalysis,
+              },
+            }),
+          );
+        }
+      } catch {
+        // Risk scoring / UI highlight is best-effort; never break the tool.
+      }
+
       const keyFacts = [
         `symbol=${selectedFiling.symbol ?? symbol}`,
         `form=${selectedFiling.form ?? "N/A"}`,
@@ -868,6 +938,7 @@ export const webMcpTools: WebMcpTool[] = [
                 windowDays: days,
                 filingsConsidered: filings.slice(0, Math.max(1, limit)).length,
                 selected: selectedFiling,
+                riskAnalysis,
                 chosenReason: `Selected the highest-ranked material filing by form size and recency.`,
                 keyFacts,
                 report: {

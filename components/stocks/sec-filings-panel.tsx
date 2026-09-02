@@ -1,33 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, FileText, Search, X } from "lucide-react";
+import { FileText, Search, ChevronDown, ChevronRight, ExternalLink, ShieldAlert } from "lucide-react";
 import { getSECFilings, type SECFiling } from "@/lib/finnhub/client";
+import type { FilingAnalysis } from "@/lib/sec-analysis";
+import { formatCompact } from "@/lib/format";
+import { Panel, Button, Badge, EmptyState, Skeleton } from "@/components/ui/kit";
 
-type ReportPreview = {
-  title: string;
-  url: string;
-  kind: "xml" | "html" | "text";
-  rawText: string;
-  summary: string[];
+const PAGE_SIZE = 10;
+
+type ReportState = {
   loading: boolean;
   error?: string;
+  kind: "xml" | "html" | "text";
+  rawText: string;
 };
 
+function filingKey(f: SECFiling, index: number): string {
+  return f.accessNumber ?? f.reportUrl ?? f.filingUrl ?? `idx-${index}`;
+}
+
 export function SECFilingsPanel({ symbol }: { symbol?: string }) {
-  const [selectedSymbol, setSelectedSymbol] = useState(
-    symbol?.toUpperCase() ?? "AAPL",
-  );
-  const [selectedReport, setSelectedReport] = useState<ReportPreview | null>(
-    null,
-  );
-  const [activeInsight, setActiveInsight] = useState<string | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState(symbol?.toUpperCase() ?? "AAPL");
+  const [page, setPage] = useState(0);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [report, setReport] = useState<ReportState | null>(null);
+  const [highlightTerms, setHighlightTerms] = useState<string[]>([]);
+  const [analysis, setAnalysis] = useState<FilingAnalysis | null>(null);
+  const pendingOpen = useRef<{ accessNumber?: string | null; reportUrl?: string | null } | null>(null);
 
   useEffect(() => {
-    if (symbol) {
-      setSelectedSymbol(symbol.toUpperCase());
-    }
+    if (symbol) setSelectedSymbol(symbol.toUpperCase());
   }, [symbol]);
 
   const { data: filings = [], isLoading } = useQuery({
@@ -37,576 +41,341 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
     enabled: Boolean(selectedSymbol),
   });
 
-  const limitedFilings = useMemo(() => filings.slice(0, 250), [filings]);
+  const totalPages = Math.max(1, Math.ceil(filings.length / PAGE_SIZE));
+  const pageFilings = useMemo(
+    () => filings.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
+    [filings, page],
+  );
 
-  async function openReport(filing: SECFiling) {
-    const reportUrl = filing.reportUrl ?? filing.filingUrl;
-    if (!reportUrl) return;
+  // WebMCP tool → open a specific filing, highlight it, show the scorecard.
+  useEffect(() => {
+    function onAnalyze(event: Event) {
+      const detail = (event as CustomEvent).detail;
+      if (!detail) return;
+      if (detail.symbol) setSelectedSymbol(String(detail.symbol).toUpperCase());
+      setHighlightTerms(Array.isArray(detail.highlight) ? detail.highlight.map(String) : []);
+      setAnalysis(detail.analysis ?? null);
+      pendingOpen.current = { accessNumber: detail.accessNumber, reportUrl: detail.reportUrl };
+    }
+    window.addEventListener("stockpilot:sec-analyze", onAnalyze);
+    return () => window.removeEventListener("stockpilot:sec-analyze", onAnalyze);
+  }, []);
 
-    const summary = summarizeFiling(filing) ?? [
-      "Filing available for review",
-      `Filed on ${formatDate(filing.filedDate)}`,
-    ];
+  // Resolve a pending agent-triggered open once the right filings have loaded.
+  useEffect(() => {
+    const pending = pendingOpen.current;
+    if (!pending || filings.length === 0) return;
+    const idx = filings.findIndex(
+      (f) =>
+        (pending.accessNumber && f.accessNumber === pending.accessNumber) ||
+        (pending.reportUrl && (f.reportUrl === pending.reportUrl || f.filingUrl === pending.reportUrl)),
+    );
+    const target = idx >= 0 ? idx : 0;
+    setPage(Math.floor(target / PAGE_SIZE));
+    setExpandedKey(filingKey(filings[target], target));
+    pendingOpen.current = null;
+  }, [filings]);
 
-    setSelectedReport({
-      title: filing.symbol ? `${filing.symbol} filing` : "SEC filing",
-      url: reportUrl,
-      kind: "text",
-      rawText: "Loading report…",
-      summary,
-      loading: true,
-    });
-
-    try {
-      const response = await fetch(
-        `/api/sec/report?url=${encodeURIComponent(reportUrl)}`,
-      );
-      const payload = (await response.json()) as {
-        error?: string;
-        kind?: "xml" | "html" | "text";
-        rawText?: string;
-      };
-
-      if (!response.ok || payload.error) {
-        setSelectedReport({
-          title: filing.symbol ? `${filing.symbol} filing` : "SEC filing",
-          url: reportUrl,
-          kind: "text",
-          rawText: payload.error ?? "Unable to load the report.",
-          summary,
-          loading: false,
-          error: payload.error ?? "Unable to load the report.",
-        });
-        return;
-      }
-
-      const rawText = payload.rawText ?? "";
-      const previewKind = payload.kind ?? "text";
-      const prettyText = prettifyReport(rawText, previewKind);
-
-      setSelectedReport({
-        title: filing.symbol ? `${filing.symbol} filing` : "SEC filing",
-        url: reportUrl,
-        kind: previewKind,
-        rawText,
-        summary,
-        loading: false,
-        error: undefined,
+  // Fetch the report whenever a filing is expanded.
+  useEffect(() => {
+    if (!expandedKey) {
+      setReport(null);
+      return;
+    }
+    const index = filings.findIndex((f, i) => filingKey(f, i) === expandedKey);
+    const filing = index >= 0 ? filings[index] : null;
+    const url = filing?.reportUrl ?? filing?.filingUrl;
+    if (!url) {
+      setReport({ loading: false, error: "No report URL for this filing.", kind: "text", rawText: "" });
+      return;
+    }
+    let cancelled = false;
+    setReport({ loading: true, kind: "text", rawText: "" });
+    fetch(`/api/sec/report?url=${encodeURIComponent(url)}`)
+      .then((r) => r.json())
+      .then((payload: { error?: string; kind?: ReportState["kind"]; rawText?: string }) => {
+        if (cancelled) return;
+        if (payload.error) {
+          setReport({ loading: false, error: payload.error, kind: "text", rawText: "" });
+          return;
+        }
+        setReport({ loading: false, kind: payload.kind ?? "text", rawText: payload.rawText ?? "" });
+      })
+      .catch((e) => {
+        if (!cancelled) setReport({ loading: false, error: String(e), kind: "text", rawText: "" });
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedKey, filings]);
 
-      if (previewKind === "xml") {
-        setSelectedReport((current) =>
-          current
-            ? {
-                ...current,
-                rawText,
-                summary: summarizeXmlReport(rawText, summary),
-                loading: false,
-                error: undefined,
-              }
-            : current,
-        );
-      }
-
-      if (previewKind === "text") {
-        setSelectedReport((current) =>
-          current
-            ? {
-                ...current,
-                rawText: prettyText || rawText,
-                resource: undefined,
-              }
-            : current,
-        );
-      }
-    } catch (error) {
-      setSelectedReport({
-        title: filing.symbol ? `${filing.symbol} filing` : "SEC filing",
-        url: reportUrl,
-        kind: "text",
-        rawText:
-          error instanceof Error
-            ? error.message
-            : "Unexpected error while loading the report.",
-        summary,
-        loading: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unexpected error while loading the report.",
-      });
+  function toggle(f: SECFiling, index: number) {
+    const key = filingKey(f, index);
+    setExpandedKey((cur) => (cur === key ? null : key));
+    if (expandedKey !== key) {
+      setHighlightTerms([]);
+      setAnalysis(null);
     }
   }
 
   return (
-    <section className="dark-card p-5">
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <Panel padded={false}>
+      <div className="flex flex-col gap-3 border-b border-hairline p-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-blue-400">
-            SEC filings
-          </div>
-          <h2 className="mt-1 text-lg font-bold text-white">
-            Latest filing activity
-          </h2>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-accent">SEC filings</div>
+          <h2 className="mt-0.5 text-lg font-bold text-txt">Latest filing activity</h2>
         </div>
-
         {!symbol && (
-          <label className="flex items-center gap-2 rounded-xl border border-[#1d1f28] bg-[#0d0e12] px-3 py-2 text-xs text-slate-300">
-            <Search className="h-3.5 w-3.5 text-slate-400" />
+          <label className="flex items-center gap-2 rounded-lg border border-hairline bg-elevated px-3 py-2 text-xs text-txt-dim">
+            <Search className="h-3.5 w-3.5 text-txt-mute" />
             <input
               value={selectedSymbol}
-              onChange={(event) => setSelectedSymbol(event.target.value.trim())}
-              placeholder="Search symbol"
-              className="w-28 bg-transparent text-sm text-white placeholder:text-slate-500 focus:outline-none"
+              onChange={(e) => {
+                setSelectedSymbol(e.target.value.trim().toUpperCase());
+                setPage(0);
+                setExpandedKey(null);
+              }}
+              placeholder="Symbol"
+              className="w-24 bg-transparent font-mono text-sm text-txt outline-none placeholder:text-txt-mute"
             />
           </label>
         )}
       </div>
 
       {isLoading ? (
-        <div className="rounded-xl border border-[#1c1d25] bg-[#0d0e12] p-4 text-sm text-slate-400">
-          Loading SEC filings…
+        <div className="space-y-2 p-5">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
         </div>
-      ) : limitedFilings.length > 0 ? (
-        <div className="space-y-3">
-          {limitedFilings.map((filing, index) => {
-            const summary = summarizeFiling(filing) ?? [
-              "Filing available for review",
-              `Filed on ${formatDate(filing.filedDate)}`,
-            ];
-            const hasReport = Boolean(filing.filingUrl || filing.reportUrl);
-
-            return (
-              <article
-                key={`${filing.accessNumber ?? filing.filingUrl ?? filing.form ?? "filing"}-${index}`}
-                className="rounded-xl border border-[#1c1d25] bg-[#0d0e12] p-4"
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-blue-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-300">
-                        {filing.form ?? getFilingDisplayLabel(filing)}
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {filing.symbol ?? selectedSymbol}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 xl:grid-cols-4">
-                      <Meta
-                        label="Filed"
-                        value={formatDate(filing.filedDate)}
-                      />
-                      <Meta
-                        label="Accepted"
-                        value={formatDate(filing.acceptedDate)}
-                      />
-                      <Meta
-                        label="Access #"
-                        value={filing.accessNumber ?? "—"}
-                      />
-                      <Meta label="Form type" value={filing.form ?? "—"} />
-                    </div>
-
-                    <div className="mt-3 rounded-lg border border-[#1d1f28] bg-[#0b0d12] p-3 text-sm text-slate-200">
-                      <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-emerald-300">
-                        Report highlights
+      ) : filings.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-6 w-6" />}
+          title={`No filings for ${selectedSymbol}`}
+          hint="Try another symbol, or add a FINNHUB_API_KEY to enable filings."
+        />
+      ) : (
+        <>
+          <div className="divide-y divide-hairline">
+            {pageFilings.map((filing, i) => {
+              const index = page * PAGE_SIZE + i;
+              const key = filingKey(filing, index);
+              const open = expandedKey === key;
+              const hasReport = Boolean(filing.reportUrl || filing.filingUrl);
+              return (
+                <div key={key}>
+                  <button
+                    type="button"
+                    onClick={() => hasReport && toggle(filing, index)}
+                    className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition hover:bg-elevated disabled:cursor-default"
+                    disabled={!hasReport}
+                  >
+                    <div className="flex items-center gap-3">
+                      {hasReport ? (
+                        open ? <ChevronDown className="h-4 w-4 text-txt-mute" /> : <ChevronRight className="h-4 w-4 text-txt-mute" />
+                      ) : (
+                        <span className="w-4" />
+                      )}
+                      <Badge tone="accent">{filing.form ?? "Filing"}</Badge>
+                      <div>
+                        <div className="font-mono text-sm font-semibold text-txt">{filing.symbol ?? selectedSymbol}</div>
+                        <div className="text-[11px] text-txt-mute">Filed {formatDate(filing.filedDate)} · Acc# {filing.accessNumber ?? "—"}</div>
                       </div>
-                      <ul className="space-y-1.5">
-                        {summary.map((item) => (
-                          <li
-                            key={item}
-                            className="leading-relaxed text-slate-300"
-                          >
-                            • {item}
-                          </li>
-                        ))}
-                      </ul>
                     </div>
-                  </div>
-
-                  <div className="flex shrink-0 flex-col gap-2">
                     {filing.filingUrl && (
                       <a
                         href={filing.filingUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-200 hover:bg-blue-500/20"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-hover"
                       >
-                        <FileText className="h-3.5 w-3.5" />
-                        Filing
-                        <ArrowUpRight className="h-3 w-3" />
+                        Source <ExternalLink className="h-3 w-3" />
                       </a>
                     )}
+                  </button>
 
-                    {hasReport && (
-                      <button
-                        type="button"
-                        onClick={() => openReport(filing)}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
-                      >
-                        Open report
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-[#1c1d25] bg-[#0d0e12] p-4 text-sm text-slate-400">
-          No SEC filings are available for {selectedSymbol || "this company"}{" "}
-          right now.
-        </div>
-      )}
-
-      {selectedReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="flex h-[80vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#1c1d25] bg-[#0b0d12] shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between border-b border-[#1c1d25] bg-[#101319] px-4 py-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300">
-                  Form 4 report preview
-                </div>
-                <div className="mt-1 text-sm font-semibold text-white">
-                  {selectedReport.title}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedReport(null)}
-                className="rounded-lg border border-[#2a2e39] bg-[#131722] p-2 text-slate-300 transition hover:text-white"
-                aria-label="Close report preview"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-auto p-4">
-              <div className="mb-4 rounded-xl border border-[#1d1f28] bg-[#0d0e12] p-4">
-                <div className="mb-3 text-[10px] uppercase tracking-[0.18em] text-emerald-300">
-                  Key highlights
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedReport.summary.map((item) => {
-                    const isActive = activeInsight === item;
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() =>
-                          setActiveInsight((current) =>
-                            current === item ? null : item,
-                          )
-                        }
-                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] transition ${
-                          isActive
-                            ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
-                            : "border-[#2a2d38] bg-[#121722] text-slate-300 hover:text-white"
-                        }`}
-                      >
-                        {item}
-                      </button>
-                    );
-                  })}
-                </div>
-                {activeInsight && (
-                  <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                    Important note: {activeInsight}
-                  </div>
-                )}
-              </div>
-
-              {selectedReport.loading && (
-                <div className="rounded-xl border border-[#1d1f28] bg-[#0d0e12] p-5 text-sm text-slate-400">
-                  Loading report preview…
-                </div>
-              )}
-
-              {selectedReport.error && !selectedReport.loading && (
-                <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-200">
-                  {selectedReport.error}
-                </div>
-              )}
-
-              {!selectedReport.loading && !selectedReport.error && (
-                <>
-                  {selectedReport.kind === "html" ? (
-                    <div className="rounded-xl border border-[#1d1f28] bg-white p-2">
-                      <iframe
-                        title={selectedReport.title}
-                        srcDoc={buildInlineHtmlFrame(
-                          highlightImportantParts(selectedReport.rawText),
-                        )}
-                        className="h-[60vh] w-full rounded-lg border border-slate-200 bg-white"
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-[#1d1f28] bg-[#0d0e12] p-4">
-                      <div className="mb-3 text-[10px] uppercase tracking-[0.18em] text-amber-300">
-                        {selectedReport.kind === "xml"
-                          ? "XML source"
-                          : "Report content"}
-                      </div>
-                      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words text-[11px] leading-6 text-slate-300">
-                        {highlightImportantText(
-                          prettifyReport(
-                            selectedReport.rawText,
-                            selectedReport.kind,
-                          ) || selectedReport.rawText,
-                        )}
-                      </pre>
+                  {open && (
+                    <div className="space-y-4 border-t border-hairline bg-app/40 p-5">
+                      {analysis && analysis.symbol === (filing.symbol ?? selectedSymbol) && (
+                        <RiskScorecard analysis={analysis} />
+                      )}
+                      <ReportView report={report} terms={highlightTerms} />
                     </div>
                   )}
-                </>
-              )}
-            </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-hairline px-5 py-3">
+              <span className="text-xs text-txt-mute">
+                Page {page + 1} of {totalPages} · {filings.length} filings
+              </span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => { setPage((p) => Math.max(0, p - 1)); setExpandedKey(null); }}>
+                  Prev
+                </Button>
+                <Button size="sm" variant="ghost" disabled={page >= totalPages - 1} onClick={() => { setPage((p) => Math.min(totalPages - 1, p + 1)); setExpandedKey(null); }}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
-    </section>
+    </Panel>
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
+// ── Risk scorecard ─────────────────────────────────────────────────────────
+function RiskScorecard({ analysis }: { analysis: FilingAnalysis }) {
+  const tone = analysis.rating === "Low" ? "up" : analysis.rating === "High" ? "down" : "accent";
+  const rec = analysis.recommendation;
+  const totalRec = rec ? rec.strongBuy + rec.buy + rec.hold + rec.sell + rec.strongSell : 0;
+  const bullPct = rec && totalRec ? Math.round(((rec.strongBuy + rec.buy) / totalRec) * 100) : null;
+
   return (
-    <div className="rounded-lg border border-[#1d1f28] bg-[#0b0d12] px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-        {label}
+    <div className="rounded-xl border border-hairline bg-panel p-4">
+      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-accent">
+        <ShieldAlert className="h-3.5 w-3.5" /> AI risk & fundamentals
       </div>
-      <div className="mt-1 break-words text-sm font-medium text-white">
-        {value}
+      <div className="mt-3 flex flex-wrap items-center gap-4">
+        <div>
+          <div className="font-mono text-3xl font-bold tnum text-txt">{analysis.score}<span className="text-base text-txt-mute">/100</span></div>
+          <Badge tone={tone as "up" | "down" | "accent"}>{analysis.rating} risk</Badge>
+        </div>
+        <div className="flex-1 space-y-2 min-w-[220px]">
+          <Bar label="Volatility" value={analysis.components.volatility} note={`${analysis.volatility}% annualized`} />
+          <Bar label="Drawdown" value={analysis.components.drawdown} note={`${analysis.maxDrawdown}% max`} />
+          {analysis.components.sentiment != null && (
+            <Bar label="Analyst risk" value={analysis.components.sentiment} note={bullPct != null ? `${bullPct}% bullish` : ""} />
+          )}
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 border-t border-hairline pt-3 text-xs text-txt-dim sm:grid-cols-3">
+        <Fact label="Market cap" value={analysis.marketCap ? `$${formatCompact(analysis.marketCap * 1_000_000)}` : "—"} />
+        <Fact label="Industry" value={analysis.industry ?? "—"} />
+        <Fact label="Analysts" value={totalRec ? String(totalRec) : "—"} />
       </div>
     </div>
   );
 }
 
-function getFilingDisplayLabel(filing: SECFiling) {
-  if (filing.form) return filing.form;
-
-  const url = filing.filingUrl ?? filing.reportUrl ?? "";
-  const lastSegment = url.split("/").filter(Boolean).at(-1) ?? "Filing";
-  const clean = decodeURIComponent(lastSegment).replace(/\.[^.]+$/, "");
-
-  return clean || "Filing";
+function Bar({ label, value, note }: { label: string; value: number; note?: string }) {
+  const color = value < 34 ? "var(--up)" : value < 67 ? "var(--accent)" : "var(--down)";
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="text-txt-dim">{label}</span>
+        <span className="text-txt-mute">{note}</span>
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-elevated">
+        <div className="h-full rounded-full" style={{ width: `${Math.min(100, value)}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
 }
 
-function formatDate(value?: string) {
-  if (!value) return "—";
-
-  const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
-
-  const date = new Date(normalized);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-txt-mute">{label}</div>
+      <div className="mt-0.5 truncate font-mono text-txt">{value}</div>
+    </div>
+  );
 }
 
-function summarizeFiling(filing: SECFiling): string[] | null {
-  const reportUrl = filing.reportUrl ?? filing.filingUrl;
-  if (!reportUrl) return null;
-
-  try {
-    const url = new URL(reportUrl);
-    const filename = url.pathname.split("/").filter(Boolean).at(-1) ?? "report";
-    const lower = filename.toLowerCase();
-
-    if (lower.includes("4") || filing.form?.includes("4")) {
-      return [
-        `Form 4 filing for ${filing.symbol ?? "this issuer"}`,
-        `Filed on ${formatDate(filing.filedDate)}`,
-        `Access number: ${filing.accessNumber ?? "not available"}`,
-      ];
-    }
-
-    return [
-      `Filing type: ${filing.form ?? "document"}`,
-      `Filed on ${formatDate(filing.filedDate)}`,
-      `Report URL available for review`,
-    ];
-  } catch {
-    return [
-      `Filing type: ${filing.form ?? "document"}`,
-      `Filed on ${formatDate(filing.filedDate)}`,
-      `Report URL available for review`,
-    ];
+// ── Report viewer (inline, highlighted) ──────────────────────────────────────
+function ReportView({ report, terms }: { report: ReportState | null; terms: string[] }) {
+  if (!report || report.loading) {
+    return <Skeleton className="h-64 w-full" />;
   }
+  if (report.error) {
+    return <div className="rounded-lg border border-down/30 bg-[color:rgba(234,57,67,0.08)] p-3 text-sm text-down">{report.error}</div>;
+  }
+
+  const regex = buildHighlightRegex(terms);
+
+  if (report.kind === "html") {
+    const doc = buildHtmlDoc(highlightHtml(sanitizeHtml(report.rawText), regex));
+    return (
+      <div className="overflow-hidden rounded-lg border border-hairline">
+        <iframe title="SEC report" sandbox="" srcDoc={doc} className="h-[560px] w-full bg-white" />
+      </div>
+    );
+  }
+
+  const text = highlightText(report.rawText || "No report content.", regex);
+  return (
+    <pre
+      className="sp-report max-h-[560px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-hairline bg-app p-4 text-[12px] leading-6 text-txt-dim"
+      dangerouslySetInnerHTML={{ __html: text }}
+    />
+  );
 }
 
-function prettifyReport(rawText: string, kind: "xml" | "html" | "text") {
-  if (!rawText) return "";
-
-  if (kind === "xml") {
-    try {
-      const parser = new DOMParser();
-      const document = parser.parseFromString(rawText, "application/xml");
-      const parseError = document.querySelector("parsererror");
-
-      if (parseError) {
-        return rawText;
-      }
-
-      const issuer = document.querySelector("issuerName")?.textContent?.trim();
-      const ticker = document
-        .querySelector("issuerTradingSymbol")
-        ?.textContent?.trim();
-      const owner = document.querySelector("rptOwnerName")?.textContent?.trim();
-      const title = document.querySelector("officerTitle")?.textContent?.trim();
-      const date = document
-        .querySelector("transactionDate value")
-        ?.textContent?.trim();
-      const security = document
-        .querySelector("securityTitle value")
-        ?.textContent?.trim();
-      const code = document
-        .querySelector("transactionCode")
-        ?.textContent?.trim();
-      const shares = document
-        .querySelector("transactionShares value")
-        ?.textContent?.trim();
-      const price = document
-        .querySelector("transactionPricePerShare value")
-        ?.textContent?.trim();
-      const ownedAfter = document
-        .querySelector("sharesOwnedFollowingTransaction value")
-        ?.textContent?.trim();
-      const notes = Array.from(document.querySelectorAll("footnote"))
-        .map((item) => item.textContent?.trim())
-        .filter(Boolean)
-        .slice(0, 6);
-
-      const lines = [
-        `Issuer: ${issuer ?? "N/A"}`,
-        `Ticker: ${ticker ?? "N/A"}`,
-        `Reporting owner: ${owner ?? "N/A"}`,
-        `Title: ${title ?? "N/A"}`,
-        `Transaction date: ${date ?? "N/A"}`,
-        `Security: ${security ?? "N/A"}`,
-        `Transaction code: ${code ?? "N/A"}`,
-        `Shares: ${shares ?? "N/A"}`,
-        `Price/share: ${price ?? "N/A"}`,
-        `Owned following transaction: ${ownedAfter ?? "N/A"}`,
-        "",
-        "Notes:",
-        ...notes.map((note) => `- ${note}`),
-      ];
-
-      return lines.join("\n");
-    } catch {
-      return rawText;
-    }
-  }
-
-  if (kind === "html") {
-    return rawText;
-  }
-
-  return rawText.trim();
+// ── Highlighting helpers ─────────────────────────────────────────────────────
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function summarizeXmlReport(rawText: string, fallback: string[]) {
-  try {
-    const parser = new DOMParser();
-    const document = parser.parseFromString(rawText, "application/xml");
-    if (document.querySelector("parsererror")) {
-      return fallback;
-    }
-
-    const issuer = document.querySelector("issuerName")?.textContent?.trim();
-    const ticker = document
-      .querySelector("issuerTradingSymbol")
-      ?.textContent?.trim();
-    const owner = document.querySelector("rptOwnerName")?.textContent?.trim();
-    const title = document.querySelector("officerTitle")?.textContent?.trim();
-    const shares = document
-      .querySelector("transactionShares value")
-      ?.textContent?.trim();
-    const date = document
-      .querySelector("transactionDate value")
-      ?.textContent?.trim();
-
-    return [
-      `Issuer: ${issuer ?? "N/A"}`,
-      `Ticker: ${ticker ?? "N/A"}`,
-      `Owner: ${owner ?? "N/A"}`,
-      `Title: ${title ?? "N/A"}`,
-      `Date: ${date ?? "N/A"}`,
-      `Shares: ${shares ?? "N/A"}`,
-    ];
-  } catch {
-    return fallback;
-  }
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildInlineHtmlFrame(rawText: string) {
-  const safeHtml = rawText
+function buildHighlightRegex(terms: string[]): RegExp {
+  const auto = [
+    "\\$[0-9][0-9,]*(?:\\.[0-9]+)?", // dollar amounts
+    "[0-9]+(?:\\.[0-9]+)?%", // percentages
+    "\\b\\d{4}-\\d{2}-\\d{2}\\b", // ISO dates
+    "\\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}\\b",
+    "\\b(?:risk|risks|litigation|lawsuit|adverse|decline|declined|uncertain|uncertainty|going concern|default|impairment|breach|investigation|liabilit\\w*|material weakness)\\b",
+  ];
+  const custom = terms.filter(Boolean).map((t) => escapeRegExp(t));
+  return new RegExp(`(${[...custom, ...auto].join("|")})`, "gi");
+}
+
+const MARK_OPEN = '<mark class="sp-hl">';
+const MARK_CLOSE = "</mark>";
+
+// Tag-aware: only highlight text between tags, never inside them.
+function highlightHtml(html: string, regex: RegExp): string {
+  return html
+    .split(/(<[^>]+>)/g)
+    .map((token) => (token.startsWith("<") ? token : token.replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`)))
+    .join("");
+}
+
+function highlightText(raw: string, regex: RegExp): string {
+  return escapeHtml(raw).replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`);
+}
+
+function sanitizeHtml(html: string): string {
+  return html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(
-      /(issuerName|issuerTradingSymbol|reportingOwner|officerTitle|transactionCode|transactionDate|transactionShares|sharesOwnedFollowingTransaction|footnote)/gi,
-      "<mark>$1</mark>",
-    );
-
-  return `<!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 18px; background: #f8fafc; color: #0f172a; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid #dfe7f1; padding: 8px 10px; text-align: left; }
-          pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
-          mark { background: #fef3c7; color: #7c2d12; padding: 0 2px; border-radius: 3px; }
-          .info { color: #0f172a; font-weight: 700; }
-        </style>
-      </head>
-      <body>
-        ${safeHtml}
-      </body>
-    </html>`;
+    .replace(/<(iframe|link|meta|base|object|embed)[^>]*>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "")
+    .replace(/javascript:/gi, "");
 }
 
-function highlightImportantText(input: string): string {
-  if (!input) return "";
-
-  return input
-    .replace(
-      /(Issuer:|Ticker:|Reporting owner:|Officer title:|Transaction date:|Security:|Transaction code:|Shares:|Price\/share:|Owned after transaction:|Notes:)/gi,
-      "\n\n*** $1",
-    )
-    .replace(/\n\n\*\*\* /g, "\n*** ");
+function buildHtmlDoc(body: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8" />
+    <style>
+      body { font-family: Georgia, 'Times New Roman', serif; margin: 0; padding: 20px; background: #f7f8fa; color: #14171f; font-size: 13px; line-height: 1.6; }
+      table { border-collapse: collapse; max-width: 100%; }
+      td, th { border: 1px solid #d7dde6; padding: 6px 9px; }
+      img { max-width: 100%; height: auto; }
+      mark.sp-hl { background: #ffe14d; color: #14171f; padding: 0 2px; border-radius: 2px; }
+    </style></head><body>${body}</body></html>`;
 }
 
-function highlightImportantParts(rawText: string): string {
-  if (!rawText) return "";
-
-  const patterns = [
-    "issuerName",
-    "issuerTradingSymbol",
-    "rptOwnerName",
-    "officerTitle",
-    "transactionCode",
-    "transactionDate",
-    "transactionShares",
-    "sharesOwnedFollowingTransaction",
-    "footnote",
-  ];
-
-  let output = rawText;
-  for (const pattern of patterns) {
-    output = output.replace(
-      new RegExp(`(${pattern})`, "gi"),
-      "<mark>$1</mark>",
-    );
-  }
-
-  return output;
+function formatDate(value?: string): string {
+  if (!value) return "—";
+  const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }

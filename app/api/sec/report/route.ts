@@ -1,5 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Only allow fetching from SEC domains — prevents this proxy from being used
+// as a server-side request forgery (SSRF) vector against internal services.
+const ALLOWED_HOST_SUFFIXES = ["sec.gov"];
+
+function isAllowedSecUrl(raw: string): URL | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  const host = parsed.hostname.toLowerCase();
+  const ok = ALLOWED_HOST_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+  );
+  return ok ? parsed : null;
+}
+
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url");
 
@@ -7,8 +26,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing report URL." }, { status: 400 });
   }
 
+  const safeUrl = isAllowedSecUrl(decodeURIComponent(url));
+  if (!safeUrl) {
+    return NextResponse.json(
+      { error: "Only https://sec.gov report URLs are allowed." },
+      { status: 400 },
+    );
+  }
+
   try {
-    const response = await fetch(decodeURIComponent(url), {
+    const response = await fetch(safeUrl.toString(), {
       headers: {
         "User-Agent": "StockPilot/1.0",
         Accept:
@@ -30,7 +57,7 @@ export async function GET(request: NextRequest) {
 
     const kind = contentType.includes("xml")
       ? "xml"
-      : contentType.includes("html") || /\.htm(l)?$/i.test(url)
+      : contentType.includes("html") || /\.htm(l)?$/i.test(safeUrl.pathname)
         ? "html"
         : "text";
 
@@ -38,7 +65,7 @@ export async function GET(request: NextRequest) {
       title: "SEC report preview",
       kind,
       rawText,
-      sourceUrl: decodeURIComponent(url),
+      sourceUrl: safeUrl.toString(),
     });
   } catch (error) {
     return NextResponse.json(
