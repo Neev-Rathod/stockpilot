@@ -22,6 +22,7 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
   const [selectedReport, setSelectedReport] = useState<ReportPreview | null>(
     null,
   );
+  const [activeInsight, setActiveInsight] = useState<string | null>(null);
 
   useEffect(() => {
     if (symbol) {
@@ -285,13 +286,36 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
             <div className="flex-1 overflow-auto p-4">
               <div className="mb-4 rounded-xl border border-[#1d1f28] bg-[#0d0e12] p-4">
                 <div className="mb-3 text-[10px] uppercase tracking-[0.18em] text-emerald-300">
-                  Filing summary
+                  Key highlights
                 </div>
-                <ul className="space-y-2 text-sm text-slate-300">
-                  {selectedReport.summary.map((item) => (
-                    <li key={item}>• {item}</li>
-                  ))}
-                </ul>
+                <div className="flex flex-wrap gap-2">
+                  {selectedReport.summary.map((item) => {
+                    const isActive = activeInsight === item;
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() =>
+                          setActiveInsight((current) =>
+                            current === item ? null : item,
+                          )
+                        }
+                        className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] transition ${
+                          isActive
+                            ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200"
+                            : "border-[#2a2d38] bg-[#121722] text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+                {activeInsight && (
+                  <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                    Important note: {activeInsight}
+                  </div>
+                )}
               </div>
 
               {selectedReport.loading && (
@@ -312,7 +336,9 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
                     <div className="rounded-xl border border-[#1d1f28] bg-white p-2">
                       <iframe
                         title={selectedReport.title}
-                        srcDoc={buildInlineHtmlFrame(selectedReport.rawText)}
+                        srcDoc={buildInlineHtmlFrame(
+                          highlightImportantParts(selectedReport.rawText),
+                        )}
                         className="h-[60vh] w-full rounded-lg border border-slate-200 bg-white"
                       />
                     </div>
@@ -324,10 +350,12 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
                           : "Report content"}
                       </div>
                       <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words text-[11px] leading-6 text-slate-300">
-                        {prettifyReport(
-                          selectedReport.rawText,
-                          selectedReport.kind,
-                        ) || selectedReport.rawText}
+                        {highlightImportantText(
+                          prettifyReport(
+                            selectedReport.rawText,
+                            selectedReport.kind,
+                          ) || selectedReport.rawText,
+                        )}
                       </pre>
                     </div>
                   )}
@@ -521,7 +549,11 @@ function summarizeXmlReport(rawText: string, fallback: string[]) {
 function buildInlineHtmlFrame(rawText: string) {
   const safeHtml = rawText
     .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "");
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(
+      /(issuerName|issuerTradingSymbol|reportingOwner|officerTitle|transactionCode|transactionDate|transactionShares|sharesOwnedFollowingTransaction|footnote)/gi,
+      "<mark>$1</mark>",
+    );
 
   return `<!doctype html>
     <html>
@@ -532,6 +564,7 @@ function buildInlineHtmlFrame(rawText: string) {
           table { border-collapse: collapse; width: 100%; }
           th, td { border: 1px solid #dfe7f1; padding: 8px 10px; text-align: left; }
           pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+          mark { background: #fef3c7; color: #7c2d12; padding: 0 2px; border-radius: 3px; }
           .info { color: #0f172a; font-weight: 700; }
         </style>
       </head>
@@ -539,4 +572,41 @@ function buildInlineHtmlFrame(rawText: string) {
         ${safeHtml}
       </body>
     </html>`;
+}
+
+function highlightImportantText(input: string): string {
+  if (!input) return "";
+
+  return input
+    .replace(
+      /(Issuer:|Ticker:|Reporting owner:|Officer title:|Transaction date:|Security:|Transaction code:|Shares:|Price\/share:|Owned after transaction:|Notes:)/gi,
+      "\n\n*** $1",
+    )
+    .replace(/\n\n\*\*\* /g, "\n*** ");
+}
+
+function highlightImportantParts(rawText: string): string {
+  if (!rawText) return "";
+
+  const patterns = [
+    "issuerName",
+    "issuerTradingSymbol",
+    "rptOwnerName",
+    "officerTitle",
+    "transactionCode",
+    "transactionDate",
+    "transactionShares",
+    "sharesOwnedFollowingTransaction",
+    "footnote",
+  ];
+
+  let output = rawText;
+  for (const pattern of patterns) {
+    output = output.replace(
+      new RegExp(`(${pattern})`, "gi"),
+      "<mark>$1</mark>",
+    );
+  }
+
+  return output;
 }
