@@ -72,6 +72,7 @@ import {
   AreaChart as AreaIcon,
   GitCompareArrows,
   LayoutGrid,
+  Sparkles,
 } from "lucide-react";
 import type { OhlcvCandle, OhlcvSeries } from "@/lib/ohlcv";
 
@@ -79,7 +80,7 @@ import type { OhlcvCandle, OhlcvSeries } from "@/lib/ohlcv";
 /* Types                                                                  */
 /* --------------------------------------------------------------------- */
 
-type ToolId =
+export type ToolId =
   | "cursor"
   | "trendline"
   | "horizontal"
@@ -96,17 +97,17 @@ type ToolId =
   | "triangle"
   | "threedrives";
 
-type ChartStyle = "candles" | "bars" | "line" | "area" | "compare" | "split";
+export type ChartStyle = "candles" | "bars" | "line" | "area" | "compare" | "split";
 
 /** Any concrete series handle — used where we only need coordinate/price-scale helpers. */
-type AnySeriesApi = ISeriesApi<SeriesType>;
+export type AnySeriesApi = ISeriesApi<SeriesType>;
 
-interface RawPoint {
+export interface RawPoint {
   time: Time;
   price: number;
 }
 
-interface Drawing {
+export interface Drawing {
   id: string;
   tool: ToolId;
   points: RawPoint[];
@@ -268,13 +269,27 @@ function macd(candles: OhlcvCandle[], fast = 12, slow = 26, signalPeriod = 9) {
 /* Component                                                              */
 /* --------------------------------------------------------------------- */
 
+export interface ComparisonChartProps {
+  series: OhlcvSeries[];
+  normalized: boolean;
+  externalDrawings?: Drawing[];
+  onDrawingsChange?: (drawings: Drawing[]) => void;
+  activeFocusSymbol?: string;
+  onFocusSymbolChange?: (symbol: string) => void;
+  activeChartStyle?: ChartStyle;
+  onChartStyleChange?: (style: ChartStyle) => void;
+}
+
 export function ComparisonChart({
   series,
   normalized,
-}: {
-  series: OhlcvSeries[];
-  normalized: boolean;
-}) {
+  externalDrawings,
+  onDrawingsChange,
+  activeFocusSymbol,
+  onFocusSymbolChange,
+  activeChartStyle,
+  onChartStyleChange,
+}: ComparisonChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -290,9 +305,11 @@ export function ComparisonChart({
     Map<string, { chart: IChartApi; series: AnySeriesApi }>
   >(new Map());
 
-  const [chartStyle, setChartStyle] = useState<ChartStyle>("candles");
+  const [chartStyle, setChartStyle] = useState<ChartStyle>(
+    activeChartStyle ?? "candles",
+  );
   const [focusSymbol, setFocusSymbol] = useState<string | undefined>(
-    series[0]?.symbol,
+    activeFocusSymbol ?? series[0]?.symbol,
   );
   const [tool, setTool] = useState<ToolId>("cursor");
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -306,7 +323,149 @@ export function ComparisonChart({
     rsi: false,
     macd: false,
   });
-  const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [drawings, setDrawings] = useState<Drawing[]>(externalDrawings ?? []);
+
+  // Sync external controlled props
+  useEffect(() => {
+    if (activeFocusSymbol) setFocusSymbol(activeFocusSymbol);
+  }, [activeFocusSymbol]);
+
+  useEffect(() => {
+    if (activeChartStyle) setChartStyle(activeChartStyle);
+  }, [activeChartStyle]);
+
+  useEffect(() => {
+    if (externalDrawings) setDrawings(externalDrawings);
+  }, [externalDrawings]);
+
+  // Listen for WebMCP & AI custom events
+  useEffect(() => {
+    function handleSetStyle(e: Event) {
+      const detail = (e as CustomEvent<{ style: ChartStyle }>).detail;
+      if (detail?.style) {
+        setChartStyle(detail.style);
+        onChartStyleChange?.(detail.style);
+      }
+    }
+
+    function handleSetFocus(e: Event) {
+      const detail = (e as CustomEvent<{ symbol: string }>).detail;
+      if (detail?.symbol) {
+        setFocusSymbol(detail.symbol);
+        onFocusSymbolChange?.(detail.symbol);
+      }
+    }
+
+    function handleSetIndicators(e: Event) {
+      const detail = (e as CustomEvent<Partial<typeof indicators>>).detail;
+      if (detail) {
+        setIndicators((prev) => ({ ...prev, ...detail }));
+      }
+    }
+
+    function handleAddDrawing(e: Event) {
+      const detail = (
+        e as CustomEvent<{ drawing?: Drawing; drawings?: Drawing[] }>
+      ).detail;
+      if (detail?.drawing) {
+        setDrawings((prev) => {
+          const next = [...prev, detail.drawing!];
+          onDrawingsChange?.(next);
+          return next;
+        });
+      } else if (Array.isArray(detail?.drawings)) {
+        setDrawings((prev) => {
+          const next = [...prev, ...detail.drawings!];
+          onDrawingsChange?.(next);
+          return next;
+        });
+      }
+    }
+
+    function handleClearDrawings() {
+      setDrawings([]);
+      draftRef.current = [];
+      hoverPointRef.current = null;
+      onDrawingsChange?.([]);
+    }
+
+    function handleApplyAiPatterns(e: Event) {
+      const detail = (
+        e as CustomEvent<{
+          symbol?: string;
+          drawings: Drawing[];
+          style?: ChartStyle;
+        }>
+      ).detail;
+      if (detail?.symbol) {
+        setFocusSymbol(detail.symbol);
+        onFocusSymbolChange?.(detail.symbol);
+      }
+      if (detail?.style) {
+        setChartStyle(detail.style);
+        onChartStyleChange?.(detail.style);
+      } else {
+        setChartStyle("candles");
+        onChartStyleChange?.("candles");
+      }
+      if (Array.isArray(detail?.drawings)) {
+        setDrawings(detail.drawings);
+        onDrawingsChange?.(detail.drawings);
+      }
+    }
+
+    window.addEventListener(
+      "stockpilot:compare-chart:set-style",
+      handleSetStyle,
+    );
+    window.addEventListener(
+      "stockpilot:compare-chart:set-focus",
+      handleSetFocus,
+    );
+    window.addEventListener(
+      "stockpilot:compare-chart:set-indicators",
+      handleSetIndicators,
+    );
+    window.addEventListener(
+      "stockpilot:compare-chart:add-drawing",
+      handleAddDrawing,
+    );
+    window.addEventListener(
+      "stockpilot:compare-chart:clear-drawings",
+      handleClearDrawings,
+    );
+    window.addEventListener(
+      "stockpilot:compare-chart:apply-ai-patterns",
+      handleApplyAiPatterns,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "stockpilot:compare-chart:set-style",
+        handleSetStyle,
+      );
+      window.removeEventListener(
+        "stockpilot:compare-chart:set-focus",
+        handleSetFocus,
+      );
+      window.removeEventListener(
+        "stockpilot:compare-chart:set-indicators",
+        handleSetIndicators,
+      );
+      window.removeEventListener(
+        "stockpilot:compare-chart:add-drawing",
+        handleAddDrawing,
+      );
+      window.removeEventListener(
+        "stockpilot:compare-chart:clear-drawings",
+        handleClearDrawings,
+      );
+      window.removeEventListener(
+        "stockpilot:compare-chart:apply-ai-patterns",
+        handleApplyAiPatterns,
+      );
+    };
+  }, [onChartStyleChange, onFocusSymbolChange, onDrawingsChange]);
 
   // Refs mirroring state that must be read from inside chart-event callbacks
   // and canvas pointer handlers, whose closures are effectively long-lived.
@@ -1298,6 +1457,20 @@ export function ComparisonChart({
               </div>
             )}
           </div>
+
+          {drawings.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300">
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              <span>Canvas Overlays ({drawings.length})</span>
+              <button
+                onClick={clearAll}
+                title="Clear all overlays"
+                className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300/80 transition-colors hover:bg-amber-400/20 hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {/* single-axis chart (candles / bars / line / area / compare) */}

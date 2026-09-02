@@ -5,7 +5,17 @@ import {
   getMarketNews,
   getCompanyProfile,
   getSECFilings,
+  getRecommendationTrends,
+  getFinancialsReported,
 } from "@/lib/finnhub/client";
+import { getLocalOhlcv } from "@/lib/ohlcv";
+import {
+  analyzeComparison,
+  detectPatternsForSymbol,
+  type ChartDrawing,
+  type ComparisonChartStyle,
+  type ChartToolId,
+} from "@/lib/comparison-analysis";
 import { usePortfolioStore } from "@/lib/portfolio-store";
 import type {
   PatternResult,
@@ -2719,6 +2729,439 @@ export const webMcpTools: WebMcpTool[] = [
               message: `Opening comparison for ${symbols.length > 0 ? symbols.join(", ") : "default stocks"}...`,
               path,
             }),
+          },
+        ],
+      };
+    },
+  },
+
+  // ─── CHART CANVAS & COMPARISON TOOLS ─────────────────────────────────────────
+  {
+    name: "set_comparison_chart_style",
+    category: "Chart Canvas & Comparison",
+    description:
+      "Switch the comparison chart view style. Available styles: 'candles' (single symbol candlesticks), 'bars' (OHLC bars), 'line' (single line), 'area' (gradient area), 'compare' (multi-stock normalized or price lines on single axis), 'split' (multi-stock responsive synced grid).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        style: {
+          type: "string",
+          enum: ["candles", "bars", "line", "area", "compare", "split"],
+          description: "Chart style to display",
+        },
+      },
+      required: ["style"],
+    },
+    async execute(params) {
+      const style = String(params.style ?? "candles") as ComparisonChartStyle;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:set-style", {
+            detail: { style },
+          }),
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              style,
+              message: `Comparison chart style updated to '${style}'.`,
+            }),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "set_comparison_focus_symbol",
+    category: "Chart Canvas & Comparison",
+    description:
+      "Change the active focused symbol on the comparison chart. Essential for single-symbol styles ('candles', 'bars', 'line', 'area') to apply technical indicators and chart drawings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "Stock ticker symbol to focus (e.g. AAPL, MSFT, TSLA)",
+        },
+      },
+      required: ["symbol"],
+    },
+    async execute(params) {
+      const symbol = String(params.symbol ?? "").toUpperCase();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:set-focus", {
+            detail: { symbol },
+          }),
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              symbol,
+              message: `Comparison chart focus switched to ${symbol}.`,
+            }),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "set_comparison_indicators",
+    category: "Chart Canvas & Comparison",
+    description:
+      "Toggle technical indicators on the comparison chart. Indicators are applied to the focused symbol. Options: SMA (20), EMA (50), Bollinger Bands, Volume, RSI (14), MACD.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sma20: { type: "boolean", description: "Toggle SMA (20)" },
+        ema50: { type: "boolean", description: "Toggle EMA (50)" },
+        bollinger: { type: "boolean", description: "Toggle Bollinger Bands" },
+        volume: { type: "boolean", description: "Toggle Volume histogram" },
+        rsi: { type: "boolean", description: "Toggle RSI (14)" },
+        macd: { type: "boolean", description: "Toggle MACD" },
+      },
+    },
+    async execute(params) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:set-indicators", {
+            detail: params,
+          }),
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              indicators: params,
+              message: "Chart indicators updated.",
+            }),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "draw_chart_annotation",
+    category: "Chart Canvas & Comparison",
+    description:
+      "Draw technical analysis annotations directly onto the live chart canvas. Supports trendlines, rays, horizontal levels, channels, rectangles, measure targets, callout text, and harmonic/chart patterns (headshoulders, triangle, abcd, etc.).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tool: {
+          type: "string",
+          enum: [
+            "trendline",
+            "horizontal",
+            "ray",
+            "channel",
+            "rectangle",
+            "text",
+            "measure",
+            "abcd",
+            "xabcd",
+            "cypher",
+            "headshoulders",
+            "triangle",
+            "threedrives",
+          ],
+          description: "Drawing tool / shape to plot",
+        },
+        points: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              time: { type: "string", description: "Date YYYY-MM-DD" },
+              price: { type: "number", description: "Price coordinate" },
+            },
+            required: ["time", "price"],
+          },
+          description: "Coordinates array for the shape",
+        },
+        color: { type: "string", description: "Hex stroke/fill color" },
+        text: { type: "string", description: "Optional callout text for annotations" },
+      },
+      required: ["tool", "points"],
+    },
+    async execute(params) {
+      const tool = String(params.tool) as ChartToolId;
+      const points = Array.isArray(params.points) ? (params.points as any[]) : [];
+      const color = params.color ? String(params.color) : "#38bdf8";
+      const text = params.text ? String(params.text) : undefined;
+
+      const drawing: ChartDrawing = {
+        id: `ai-draw-${Date.now()}`,
+        tool,
+        points,
+        color,
+        text,
+      };
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:add-drawing", {
+            detail: { drawing },
+          }),
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              drawing,
+              message: `Annotation '${tool}' plotted with ${points.length} points on chart canvas.`,
+            }),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "clear_chart_drawings",
+    category: "Chart Canvas & Comparison",
+    description: "Clear all drawings and annotations from the comparison chart overlay canvas.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+    async execute() {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:clear-drawings"),
+        );
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: "All canvas drawings cleared.",
+            }),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "get_stock_recommendation_trends",
+    category: "Market Data",
+    description:
+      "Get latest analyst recommendation trends for one or more companies from Finnhub (strongBuy, buy, hold, sell, strongSell, period).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbols: {
+          type: "array",
+          items: { type: "string" },
+          description: "List of stock ticker symbols (e.g. ['AAPL', 'TSLA'])",
+        },
+      },
+      required: ["symbols"],
+    },
+    async execute(params) {
+      const symbols = Array.isArray(params.symbols)
+        ? params.symbols.map((s) => String(s).toUpperCase())
+        : [];
+      const results = await Promise.all(
+        symbols.map(async (symbol) => {
+          const trends = await getRecommendationTrends(symbol);
+          return { symbol, trends };
+        }),
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(results, null, 2),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "get_financials_reported",
+    category: "Market Data",
+    description:
+      "Get SEC financials as reported for a company from Finnhub, including income statement (ic), balance sheet (bs), and cash flow (cf).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Ticker symbol (e.g. AAPL)" },
+        freq: {
+          type: "string",
+          enum: ["annual", "quarterly"],
+          description: "Frequency of filings (default quarterly)",
+        },
+      },
+      required: ["symbol"],
+    },
+    async execute(params) {
+      const symbol = String(params.symbol ?? "").toUpperCase();
+      const freq = params.freq ? String(params.freq) : "quarterly";
+      const result = await getFinancialsReported({ symbol, freq });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result ?? { symbol, error: "No reported financials found." }, null, 2),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "detect_comparison_chart_patterns",
+    category: "Chart Patterns",
+    description:
+      "Detect technical chart patterns on historical OHLCV candles for a stock (Head & Shoulders, Triangles, Channels, Harmonics) and optionally render them directly onto the live chart canvas.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Stock ticker symbol (e.g. AAPL)" },
+        drawOnChart: {
+          type: "boolean",
+          description: "If true, automatically draws detected patterns onto the comparison chart canvas (default true)",
+        },
+      },
+      required: ["symbol"],
+    },
+    async execute(params) {
+      const symbol = String(params.symbol ?? "AAPL").toUpperCase();
+      const drawOnChart = params.drawOnChart !== false;
+
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      const patterns = detectPatternsForSymbol(symbol, candles);
+
+      if (drawOnChart && patterns.length > 0 && typeof window !== "undefined") {
+        const drawings = patterns.flatMap((p) => p.drawings);
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
+            detail: {
+              symbol,
+              style: "candles",
+              drawings,
+            },
+          }),
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              symbol,
+              patternCount: patterns.length,
+              drawnOnCanvas: drawOnChart,
+              patterns: patterns.map((p) => ({
+                id: p.id,
+                name: p.name,
+                direction: p.direction,
+                confidence: p.confidence,
+                rationale: p.rationale,
+                entryPrice: p.entryPrice,
+                targetPrice: p.targetPrice,
+                drawingPoints: p.drawings.map((d) => ({ tool: d.tool, points: d.points })),
+              })),
+            }, null, 2),
+          },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "analyze_stock_comparison",
+    category: "AI Strategy",
+    description:
+      "Run complete multi-company comparative AI analysis across selected stocks. Ingests historical OHLCV data, company news, Finnhub analyst recommendation trends, and SEC reported financials. Generates a row/column comparison matrix, catalyst comparison, strategic AI verdict, and detects chart patterns with canvas drawings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbols: {
+          type: "array",
+          items: { type: "string" },
+          description: "List of stock symbols to benchmark (e.g. ['AAPL', 'MSFT', 'TSLA'])",
+        },
+        drawOnChart: {
+          type: "boolean",
+          description: "Automatically render detected AI patterns on the chart canvas (default true)",
+        },
+      },
+      required: ["symbols"],
+    },
+    async execute(params) {
+      const symbols = Array.isArray(params.symbols)
+        ? params.symbols.map((s) => String(s).toUpperCase())
+        : ["AAPL", "MSFT"];
+      const drawOnChart = params.drawOnChart !== false;
+
+      // 1. Fetch OHLCV
+      const series = await getLocalOhlcv(symbols);
+
+      // 2. Fetch multi-company news, recommendations, reported financials
+      const to = new Date().toISOString().slice(0, 10);
+      const from = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+
+      const [newsEntries, recEntries, finEntries] = await Promise.all([
+        Promise.all(symbols.map(async (s) => [s, await getCompanyNews(s, from, to)] as const)),
+        Promise.all(symbols.map(async (s) => [s, await getRecommendationTrends(s)] as const)),
+        Promise.all(symbols.map(async (s) => [s, await getFinancialsReported({ symbol: s, freq: "quarterly" })] as const)),
+      ]);
+
+      const newsMap = Object.fromEntries(newsEntries);
+      const recommendationsMap = Object.fromEntries(recEntries);
+      const financialsMap = Object.fromEntries(finEntries);
+
+      const result = analyzeComparison({
+        series,
+        newsMap,
+        recommendationsMap,
+        financialsMap,
+      });
+
+      if (drawOnChart && result.detectedPatterns.length > 0 && typeof window !== "undefined") {
+        const topPattern = result.detectedPatterns[0];
+        window.dispatchEvent(
+          new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
+            detail: {
+              symbol: topPattern.symbol,
+              style: "candles",
+              drawings: topPattern.drawings,
+            },
+          }),
+        );
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
           },
         ],
       };

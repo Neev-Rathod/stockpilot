@@ -13,11 +13,13 @@ import {
   GraduationCap,
   ChevronDown,
   ChevronUp,
+  Layers,
 } from "lucide-react";
 
 const categoryIcons: Record<string, React.ElementType> = {
   "Market Data": TrendingUp,
   "Chart Patterns": Cpu,
+  "Chart Canvas & Comparison": Layers,
   Portfolio: Wallet,
   "Watchlist & Alerts": Bell,
   Navigation: Navigation,
@@ -28,6 +30,7 @@ const categoryIcons: Record<string, React.ElementType> = {
 const categoryColors: Record<string, { badge: string; dot: string; border: string }> = {
   "Market Data": { badge: "bg-blue-500/10 text-blue-400", dot: "bg-blue-400", border: "border-blue-500/20" },
   "Chart Patterns": { badge: "bg-purple-500/10 text-purple-400", dot: "bg-purple-400", border: "border-purple-500/20" },
+  "Chart Canvas & Comparison": { badge: "bg-indigo-500/10 text-indigo-400", dot: "bg-indigo-400", border: "border-indigo-500/20" },
   Portfolio: { badge: "bg-emerald-500/10 text-emerald-400", dot: "bg-emerald-400", border: "border-emerald-500/20" },
   "Watchlist & Alerts": { badge: "bg-amber-500/10 text-amber-400", dot: "bg-amber-400", border: "border-amber-500/20" },
   Navigation: { badge: "bg-cyan-500/10 text-cyan-400", dot: "bg-cyan-400", border: "border-cyan-500/20" },
@@ -38,7 +41,9 @@ const categoryColors: Record<string, { badge: string; dot: string; border: strin
 export function WebMcpPanel() {
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [registering, setRegistering] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(["Chart Patterns", "Portfolio"]));
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    new Set(["Chart Patterns", "Chart Canvas & Comparison", "AI Strategy"]),
+  );
 
   const checkAndRegister = async () => {
     setRegistering(true);

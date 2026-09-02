@@ -220,6 +220,14 @@ export async function GET(request: NextRequest) {
           name: "Bulk Quote",
           path: "/api/finnhub?type=bulk-quote&symbols=AAPL,MSFT,GOOGL",
         },
+        {
+          name: "Recommendation Trends",
+          path: "/api/finnhub?type=recommendation&symbol=AAPL",
+        },
+        {
+          name: "Reported Financials",
+          path: "/api/finnhub?type=financials-reported&symbol=AAPL",
+        },
       ],
     });
   }
@@ -231,6 +239,7 @@ export async function GET(request: NextRequest) {
   const form = searchParams.get("form") ?? undefined;
   const from = searchParams.get("from") ?? undefined;
   const to = searchParams.get("to") ?? undefined;
+  const freq = searchParams.get("freq") ?? undefined;
 
   try {
     if (type === "quote") {
@@ -378,6 +387,34 @@ export async function GET(request: NextRequest) {
 
       const payload = Array.isArray(result.body) ? result.body : [];
       return NextResponse.json(payload.slice(0, 250), { status: 200 });
+    }
+
+    if (type === "recommendation") {
+      if (!symbol) {
+        return NextResponse.json({ error: "Missing symbol." }, { status: 400 });
+      }
+
+      const result = await proxyFinnhub("/stock/recommendation", { symbol });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
+    if (type === "financials-reported") {
+      if (!symbol && !cik && !accessNumber) {
+        return NextResponse.json(
+          { error: "Missing symbol, cik, or accessNumber." },
+          { status: 400 },
+        );
+      }
+
+      const result = await proxyFinnhub("/stock/financials-reported", {
+        symbol,
+        cik,
+        accessNumber,
+        freq,
+        from,
+        to,
+      });
+      return NextResponse.json(result.body, { status: result.status });
     }
 
     return NextResponse.json(

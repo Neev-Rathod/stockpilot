@@ -275,3 +275,84 @@ export async function getSECFilings(params: {
     return [];
   }
 }
+
+export interface FinnhubRecommendationItem {
+  buy: number;
+  hold: number;
+  period: string;
+  sell: number;
+  strongBuy: number;
+  strongSell: number;
+  symbol: string;
+}
+
+export interface FinnhubFinancialReportItem {
+  accessNumber: string;
+  symbol: string;
+  cik: string;
+  year: number;
+  quarter: number;
+  form: string;
+  startDate: string;
+  endDate: string;
+  filedDate: string;
+  acceptedDate: string;
+  report?: {
+    bs?: Record<string, number>;
+    cf?: Record<string, number>;
+    ic?: Record<string, number>;
+  };
+}
+
+export interface FinnhubFinancialsReportedResponse {
+  cik: string;
+  symbol: string;
+  data: FinnhubFinancialReportItem[];
+}
+
+export async function getRecommendationTrends(
+  symbol: string,
+): Promise<FinnhubRecommendationItem[]> {
+  const cleaned = symbol.trim().toUpperCase();
+  if (!cleaned) return [];
+  try {
+    const result = await finnhubRequest<FinnhubRecommendationItem[]>({
+      type: "recommendation",
+      symbol: cleaned,
+    });
+    return Array.isArray(result) ? result : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getFinancialsReported(params: {
+  symbol?: string;
+  cik?: string;
+  accessNumber?: string;
+  freq?: string;
+  from?: string;
+  to?: string;
+}): Promise<FinnhubFinancialsReportedResponse | null> {
+  try {
+    const query = Object.fromEntries(
+      Object.entries({
+        type: "financials-reported",
+        symbol: params.symbol?.trim().toUpperCase() || undefined,
+        cik: params.cik?.trim() || undefined,
+        accessNumber: params.accessNumber?.trim() || undefined,
+        freq: params.freq || undefined,
+        from: params.from || undefined,
+        to: params.to || undefined,
+      }).filter(([, value]) => value !== undefined && value !== ""),
+    ) as Record<string, string>;
+
+    const result = await finnhubRequest<FinnhubFinancialsReportedResponse>(query);
+    return result && typeof result === "object" && Array.isArray(result.data)
+      ? result
+      : null;
+  } catch {
+    return null;
+  }
+}
+
