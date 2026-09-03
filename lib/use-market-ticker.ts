@@ -20,8 +20,7 @@ const DEFAULT_SYMBOLS = [
 export function useMarketTicker(symbols: string[] = DEFAULT_SYMBOLS) {
   const { quotes, isLoading, isError, refetch } = useLiveMarketQuotes(
     symbols,
-    30_000, // 30-Second API Refresh Loop
-    1_000,  // 1-Second Price Ticker Loop
+    30_000, // refetch interval
   );
 
   const priceMap = useMemo(

@@ -62,7 +62,40 @@ export async function getDbQuote(symbol: string): Promise<MarketQuote | null> {
   return quote ?? null;
 }
 
-// ─── OHLCV history (for the compare page) ─────────────────────────────────
+// ─── OHLCV history (charts + compare) ─────────────────────────────────────
+// Supabase/PostgREST caps a response at 1000 rows, so we page through each
+// symbol's full history (~2.5k rows) rather than silently getting the oldest
+// 1000. Queried per symbol so multi-symbol compares aren't starved.
+const OHLCV_PAGE = 1000;
+
+async function fetchSymbolCandles(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  symbol: string,
+): Promise<OhlcvSeries> {
+  const candles: OhlcvSeries["candles"] = [];
+  for (let from = 0; ; from += OHLCV_PAGE) {
+    const { data, error } = await supabase
+      .from("stock_prices")
+      .select("date,open,high,low,close,volume")
+      .eq("symbol", symbol)
+      .order("date", { ascending: true })
+      .range(from, from + OHLCV_PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    for (const row of data as Array<Record<string, unknown>>) {
+      candles.push({
+        date: String(row.date),
+        open: Number(row.open),
+        high: Number(row.high),
+        low: Number(row.low),
+        close: Number(row.close),
+        volume: Number(row.volume),
+      });
+    }
+    if (data.length < OHLCV_PAGE) break;
+  }
+  return { symbol, candles };
+}
+
 export async function getDbOhlcv(symbols: string[]): Promise<OhlcvSeries[]> {
   const supabase = getSupabaseBrowser();
   if (!supabase) return [];
@@ -70,27 +103,8 @@ export async function getDbOhlcv(symbols: string[]): Promise<OhlcvSeries[]> {
     ...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)),
   ];
   if (!upper.length) return [];
-  const { data, error } = await supabase
-    .from("stock_prices")
-    .select("symbol,date,open,high,low,close,volume")
-    .in("symbol", upper)
-    .order("date", { ascending: true });
-  if (error || !data) return [];
-
-  const bySymbol = new Map<string, OhlcvSeries>();
-  for (const row of data as Array<Record<string, unknown>>) {
-    const symbol = String(row.symbol);
-    if (!bySymbol.has(symbol)) bySymbol.set(symbol, { symbol, candles: [] });
-    bySymbol.get(symbol)!.candles.push({
-      date: String(row.date),
-      open: Number(row.open),
-      high: Number(row.high),
-      low: Number(row.low),
-      close: Number(row.close),
-      volume: Number(row.volume),
-    });
-  }
-  return upper.map((s) => bySymbol.get(s)).filter(Boolean) as OhlcvSeries[];
+  const results = await Promise.all(upper.map((s) => fetchSymbolCandles(supabase, s)));
+  return results.filter((r) => r.candles.length > 0);
 }
 
 // ─── Per-user portfolio load (called on login) ────────────────────────────

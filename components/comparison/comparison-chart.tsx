@@ -99,6 +99,9 @@ export type ToolId =
 
 export type ChartStyle = "candles" | "bars" | "line" | "area" | "compare" | "split";
 
+// Line colors used for each series in compare mode (and the legend).
+const COMPARE_PALETTE = ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#f87171"];
+
 /** Any concrete series handle — used where we only need coordinate/price-scale helpers. */
 export type AnySeriesApi = ISeriesApi<SeriesType>;
 
@@ -528,8 +531,10 @@ export function ComparisonChart({
       null,
     [series, effectiveFocusSymbol],
   );
-  const isCompareMode = chartStyle === "compare";
-  const isSplitMode = chartStyle === "split";
+  // Compare & split only make sense with 2+ symbols (i.e. the Compare tab).
+  const multiSymbol = series.length > 1;
+  const isCompareMode = chartStyle === "compare" && multiSymbol;
+  const isSplitMode = chartStyle === "split" && multiSymbol;
 
   /* ---------------- overlay sizing ---------------- */
   const sizeOverlay = useCallback(() => {
@@ -1021,7 +1026,7 @@ export function ComparisonChart({
 
       applyIndicators(candles);
     } else if (isCompareMode) {
-      const palette = ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#f87171"];
+      const palette = COMPARE_PALETTE;
       series.forEach((entry, i) => {
         const s = chart.addSeries(LineSeries, {
           color: palette[i % palette.length],
@@ -1300,16 +1305,13 @@ export function ComparisonChart({
     { id: "bars", icon: <BarChart3 className="h-4 w-4" />, label: "Bars" },
     { id: "line", icon: <LineIcon className="h-4 w-4" />, label: "Line" },
     { id: "area", icon: <AreaIcon className="h-4 w-4" />, label: "Area" },
-    {
-      id: "compare",
-      icon: <GitCompareArrows className="h-4 w-4" />,
-      label: "Compare",
-    },
-    {
-      id: "split",
-      icon: <LayoutGrid className="h-4 w-4" />,
-      label: "Split",
-    },
+    // Compare & Split only appear when 2+ symbols are charted (the Compare tab).
+    ...(multiSymbol
+      ? ([
+          { id: "compare", icon: <GitCompareArrows className="h-4 w-4" />, label: "Compare" },
+          { id: "split", icon: <LayoutGrid className="h-4 w-4" />, label: "Split" },
+        ] as { id: ChartStyle; icon: React.ReactNode; label: string }[])
+      : []),
   ];
 
   return (
@@ -1524,6 +1526,21 @@ export function ComparisonChart({
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
           />
+
+          {/* Compare-mode legend: color ↔ company */}
+          {isCompareMode && series.length > 0 && (
+            <div className="pointer-events-none absolute left-2 top-2 z-20 flex flex-wrap gap-x-3 gap-y-1 rounded-lg border border-hairline bg-[#0d0e12]/90 px-2.5 py-1.5 text-[11px] font-semibold backdrop-blur">
+              {series.map((s, i) => (
+                <span key={s.symbol} className="flex items-center gap-1.5 text-txt">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    style={{ backgroundColor: COMPARE_PALETTE[i % COMPARE_PALETTE.length] }}
+                  />
+                  {s.symbol}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* split view: one synced pane per symbol */}

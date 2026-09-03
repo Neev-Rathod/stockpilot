@@ -27,7 +27,7 @@ export default function StockDetailPage() {
   const isWatchlisted = favorites.includes(symbol);
 
   const symbolList = useMemo(() => [symbol], [symbol]);
-  const { quotes } = useLiveMarketQuotes(symbolList, 30_000, 1000);
+  const { quotes } = useLiveMarketQuotes(symbolList, 30_000);
   const quote = quotes[0] ?? null;
 
   const { data: profile } = useQuery({

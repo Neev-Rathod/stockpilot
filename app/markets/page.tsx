@@ -6,6 +6,7 @@ import { Search, TrendingUp, TrendingDown, Activity, Star } from "lucide-react";
 import { useMarketTicker } from "@/lib/use-market-ticker";
 import { usePortfolioStore } from "@/lib/portfolio-store";
 import { BuySellModal } from "@/components/portfolio/buy-sell-modal";
+import { StockChart } from "@/components/stocks/stock-chart";
 import { toast } from "sonner";
 import { formatUsd, formatPercent } from "@/lib/format";
 import { Panel, PanelHeader, Button, Stat, PriceChange, EmptyState } from "@/components/ui/kit";
@@ -21,9 +22,11 @@ const SECTORS = ["All", "Technology", "Consumer Cyclical", "Communication Servic
 export default function MarketsPage() {
   const [sector, setSector] = useState("All");
   const [search, setSearch] = useState("");
+  const [chartSymbol, setChartSymbol] = useState("AAPL");
   const [modal, setModal] = useState<{ symbol: string; companyName: string; price: number } | null>(null);
 
   const { quotes } = useMarketTicker();
+  const chartQuote = quotes.find((q) => q.symbol === chartSymbol);
   const buyStock = usePortfolioStore((s) => s.buyStock);
   const favorites = usePortfolioStore((s) => s.favorites);
   const toggleFavorite = usePortfolioStore((s) => s.toggleFavorite);
@@ -78,6 +81,25 @@ export default function MarketsPage() {
         <Stat label="Advancing" value={<span className="text-up">{breadth.adv}</span>} icon={<TrendingUp className="h-4 w-4 text-up" />} />
         <Stat label="Declining" value={<span className="text-down">{breadth.dec}</span>} icon={<TrendingDown className="h-4 w-4 text-down" />} />
         <Stat label="Avg change" value={<span className={breadth.avg >= 0 ? "text-up" : "text-down"}>{formatPercent(breadth.avg)}</span>} icon={<Activity className="h-4 w-4 text-accent" />} />
+      </div>
+
+      {/* Chart — same engine/UI as the Compare tab */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {quotes.map((q) => (
+            <button
+              key={q.symbol}
+              type="button"
+              onClick={() => setChartSymbol(q.symbol)}
+              className={`rounded-md px-2.5 py-1 font-mono text-xs font-semibold transition ${
+                chartSymbol === q.symbol ? "bg-accent text-[color:var(--on-accent)]" : "text-txt-dim hover:text-txt"
+              }`}
+            >
+              {q.symbol}
+            </button>
+          ))}
+        </div>
+        <StockChart symbol={chartSymbol} price={chartQuote?.price} change={chartQuote?.percentChange} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">

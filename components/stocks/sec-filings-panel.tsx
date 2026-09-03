@@ -297,13 +297,19 @@ function ReportView({ report, terms }: { report: ReportState | null; terms: stri
 
   const regex = buildHighlightRegex(terms);
 
+  // HTML filings (10-K/10-Q) render as the document itself.
   if (report.kind === "html") {
     const doc = buildHtmlDoc(highlightHtml(sanitizeHtml(report.rawText), regex));
-    return (
-      <div className="overflow-hidden rounded-lg border border-hairline">
-        <iframe title="SEC report" sandbox="" srcDoc={doc} className="h-[560px] w-full bg-white" />
-      </div>
-    );
+    return <DocFrame doc={doc} />;
+  }
+
+  // XML filings (Form 4/144) — render a readable document, not raw code.
+  if (report.kind === "xml") {
+    const readable =
+      xmlToReadableHtml(report.rawText) ??
+      `<pre style="white-space:pre-wrap;word-break:break-word">${escapeHtml(stripTags(report.rawText))}</pre>`;
+    const doc = buildHtmlDoc(highlightHtml(readable, regex));
+    return <DocFrame doc={doc} />;
   }
 
   const text = highlightText(report.rawText || "No report content.", regex);
@@ -315,6 +321,70 @@ function ReportView({ report, terms }: { report: ReportState | null; terms: stri
   );
 }
 
+function DocFrame({ doc }: { doc: string }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-hairline">
+      <iframe title="SEC report" sandbox="" srcDoc={doc} className="h-[560px] w-full bg-white" />
+    </div>
+  );
+}
+
+function stripTags(s: string): string {
+  return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// Turn an SEC ownership (Form 4/144) XML doc into a readable HTML summary.
+// Returns null if it doesn't look like an ownership filing (caller falls back).
+function xmlToReadableHtml(xml: string): string | null {
+  if (typeof window === "undefined" || !xml) return null;
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(xml, "application/xml");
+  } catch {
+    return null;
+  }
+  if (doc.querySelector("parsererror")) return null;
+  const esc = (s: string) => escapeHtml(s ?? "");
+  const text = (sel: string) => doc.querySelector(sel)?.textContent?.trim() ?? "";
+  const issuer = text("issuerName");
+  const owner = text("rptOwnerName");
+  if (!issuer && !owner) return null; // not an ownership filing
+
+  const ticker = text("issuerTradingSymbol");
+  const title = text("officerTitle");
+  const docType = text("documentType");
+  const rows = [...doc.querySelectorAll("nonDerivativeTransaction, derivativeTransaction")]
+    .map((t) => {
+      const q = (s: string) => t.querySelector(s)?.textContent?.trim() ?? "";
+      return {
+        date: q("transactionDate value"),
+        security: q("securityTitle value"),
+        code: q("transactionCoding transactionCode") || q("transactionCode"),
+        shares: q("transactionShares value"),
+        price: q("transactionPricePerShare value"),
+        owned: q("sharesOwnedFollowingTransaction value"),
+      };
+    })
+    .map(
+      (t) =>
+        `<tr><td>${esc(t.date)}</td><td>${esc(t.security)}</td><td>${esc(t.code)}</td><td>${esc(t.shares)}</td><td>${t.price ? "$" + esc(t.price) : ""}</td><td>${esc(t.owned)}</td></tr>`,
+    )
+    .join("");
+  const footnotes = [...doc.querySelectorAll("footnote")]
+    .map((f) => f.textContent?.trim())
+    .filter(Boolean)
+    .map((f) => `<li>${esc(f as string)}</li>`)
+    .join("");
+
+  return `
+    <h2>SEC Form ${esc(docType || "4")} — Statement of Changes in Beneficial Ownership</h2>
+    <p><strong>Issuer:</strong> ${esc(issuer)}${ticker ? ` (${esc(ticker)})` : ""}</p>
+    <p><strong>Reporting owner:</strong> ${esc(owner)}${title ? ` — ${esc(title)}` : ""}</p>
+    ${rows ? `<h3>Transactions</h3><table><thead><tr><th>Date</th><th>Security</th><th>Code</th><th>Shares</th><th>Price</th><th>Owned after</th></tr></thead><tbody>${rows}</tbody></table>` : "<p>No transaction lines in this filing.</p>"}
+    ${footnotes ? `<h3>Footnotes</h3><ul>${footnotes}</ul>` : ""}
+  `;
+}
+
 // ── Highlighting helpers ─────────────────────────────────────────────────────
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -324,31 +394,30 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildHighlightRegex(terms: string[]): RegExp {
-  const auto = [
-    "\\$[0-9][0-9,]*(?:\\.[0-9]+)?", // dollar amounts
-    "[0-9]+(?:\\.[0-9]+)?%", // percentages
-    "\\b\\d{4}-\\d{2}-\\d{2}\\b", // ISO dates
-    "\\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}\\b",
-    "\\b(?:risk|risks|litigation|lawsuit|adverse|decline|declined|uncertain|uncertainty|going concern|default|impairment|breach|investigation|liabilit\\w*|material weakness)\\b",
-  ];
+// Highlighting is agent-driven: we only mark the exact phrases/sentences the
+// agent passed via the tool's `highlight` argument. With no prompt (a manual
+// open) there are no terms, so the document renders clean — no default noise.
+function buildHighlightRegex(terms: string[]): RegExp | null {
   const custom = terms.filter(Boolean).map((t) => escapeRegExp(t));
-  return new RegExp(`(${[...custom, ...auto].join("|")})`, "gi");
+  if (custom.length === 0) return null;
+  return new RegExp(`(${custom.join("|")})`, "gi");
 }
 
 const MARK_OPEN = '<mark class="sp-hl">';
 const MARK_CLOSE = "</mark>";
 
 // Tag-aware: only highlight text between tags, never inside them.
-function highlightHtml(html: string, regex: RegExp): string {
+function highlightHtml(html: string, regex: RegExp | null): string {
+  if (!regex) return html;
   return html
     .split(/(<[^>]+>)/g)
     .map((token) => (token.startsWith("<") ? token : token.replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`)))
     .join("");
 }
 
-function highlightText(raw: string, regex: RegExp): string {
-  return escapeHtml(raw).replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`);
+function highlightText(raw: string, regex: RegExp | null): string {
+  const escaped = escapeHtml(raw);
+  return regex ? escaped.replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`) : escaped;
 }
 
 function sanitizeHtml(html: string): string {

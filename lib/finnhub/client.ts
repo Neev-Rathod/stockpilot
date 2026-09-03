@@ -181,6 +181,37 @@ export async function getIPOCalendar(
   }
 }
 
+export interface FinnhubEarningsItem {
+  date?: string;
+  symbol?: string;
+  hour?: string;
+  quarter?: number;
+  year?: number;
+  epsActual?: number | null;
+  epsEstimate?: number | null;
+  revenueActual?: number | null;
+  revenueEstimate?: number | null;
+}
+
+export async function getEarningsCalendar(
+  from: string,
+  to: string,
+  symbol?: string,
+): Promise<FinnhubEarningsItem[]> {
+  if (!from || !to) return [];
+  try {
+    const result = await finnhubRequest<{ earningsCalendar?: FinnhubEarningsItem[] }>({
+      type: "earnings-calendar",
+      from,
+      to,
+      ...(symbol ? { symbol: symbol.toUpperCase() } : {}),
+    });
+    return Array.isArray(result?.earningsCalendar) ? result.earningsCalendar : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getSECFilings(params: {
   symbol?: string;
   cik?: string;

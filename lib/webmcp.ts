@@ -7,6 +7,7 @@ import {
   getSECFilings,
   getRecommendationTrends,
   getFinancialsReported,
+  getEarningsCalendar,
 } from "@/lib/finnhub/client";
 import { getLocalOhlcv } from "@/lib/ohlcv";
 import {
@@ -15,6 +16,7 @@ import {
   riskScore as computeRiskScore,
   type FilingAnalysis,
 } from "@/lib/sec-analysis";
+import { pearson, pivotLevels, localSwings, runBacktest } from "@/lib/ta";
 import {
   analyzeComparison,
   detectPatternsForSymbol,
@@ -24,7 +26,6 @@ import {
 } from "@/lib/comparison-analysis";
 import { usePortfolioStore } from "@/lib/portfolio-store";
 import type {
-  PatternResult,
   ElliottWaveResult,
   ChartPatternType,
   ElliottWaveType,
@@ -58,33 +59,21 @@ declare global {
 }
 
 // ─── Shared universe of stocks ────────────────────────────────────────────────
+// The 10 symbols we hold real OHLCV data for in Supabase. Betas are computed
+// from ~2,500 days of daily returns vs an equal-weight basket of this universe
+// (see scripts/compute-betas — not guessed).
 const STOCK_UNIVERSE = [
-  { symbol: "AAPL", sector: "Technology", beta: 1.2 },
-  { symbol: "MSFT", sector: "Technology", beta: 0.9 },
-  { symbol: "GOOGL", sector: "Technology", beta: 1.1 },
-  { symbol: "NVDA", sector: "Technology", beta: 1.8 },
-  { symbol: "TSLA", sector: "Consumer Cyclical", beta: 2.0 },
-  { symbol: "AMZN", sector: "Consumer Cyclical", beta: 1.3 },
-  { symbol: "META", sector: "Technology", beta: 1.4 },
-  { symbol: "JPM", sector: "Financial Services", beta: 1.1 },
-  { symbol: "V", sector: "Financial Services", beta: 0.9 },
-  { symbol: "JNJ", sector: "Healthcare", beta: 0.7 },
-  { symbol: "WMT", sector: "Consumer Defensive", beta: 0.5 },
-  { symbol: "XOM", sector: "Energy", beta: 1.0 },
-  { symbol: "BRK.B", sector: "Financial Services", beta: 0.85 },
-  { symbol: "UNH", sector: "Healthcare", beta: 0.8 },
-  { symbol: "LLY", sector: "Healthcare", beta: 0.6 },
+  { symbol: "AAPL", sector: "Technology", beta: 0.84 },
+  { symbol: "MSFT", sector: "Technology", beta: 0.81 },
+  { symbol: "AMD", sector: "Technology", beta: 1.56 },
+  { symbol: "CSCO", sector: "Technology", beta: 0.59 },
+  { symbol: "QCOM", sector: "Technology", beta: 1.05 },
+  { symbol: "AMZN", sector: "Consumer Cyclical", beta: 0.96 },
+  { symbol: "TSLA", sector: "Consumer Cyclical", beta: 1.5 },
+  { symbol: "SBUX", sector: "Consumer Cyclical", beta: 0.64 },
+  { symbol: "META", sector: "Communication Services", beta: 1.04 },
+  { symbol: "NFLX", sector: "Communication Services", beta: 1.0 },
 ];
-
-// ─── Deterministic seeded random for pattern detection ────────────────────────
-function seededRandom(seed: number): number {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
-
-function symbolSeed(symbol: string): number {
-  return symbol.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-}
 
 function normalizeSecReportText(rawText: string, kind: string): string {
   const text = (rawText ?? "").trim();
@@ -159,480 +148,6 @@ function normalizeSecReportText(rawText: string, kind: string): string {
   }
 
   return text.slice(0, 12000);
-}
-
-// ─── Pattern detection helpers ─────────────────────────────────────────────────
-function detectPattern(
-  symbol: string,
-  pattern: ChartPatternType,
-  price: number,
-): PatternResult {
-  const seed =
-    symbolSeed(symbol) +
-    pattern.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  const rng = (n: number) => seededRandom(seed + n);
-
-  const confidence = Math.round(45 + rng(1) * 45); // 45–90%
-  const direction: "bullish" | "bearish" | "neutral" =
-    rng(2) > 0.6 ? "bullish" : rng(2) > 0.3 ? "bearish" : "neutral";
-
-  const patternDescriptions: Record<ChartPatternType, string> = {
-    head_and_shoulders: `Classic bearish reversal pattern detected on ${symbol}. Left shoulder, head, and right shoulder form with a neckline near $${(price * 0.95).toFixed(2)}. Breakdown below neckline would confirm the pattern.`,
-    inverse_head_and_shoulders: `Bullish reversal pattern on ${symbol}. Inverse head at $${(price * 0.88).toFixed(2)} with symmetrical shoulders. Breakout above neckline at $${(price * 0.97).toFixed(2)} is the trigger.`,
-    abcd: `ABCD harmonic pattern on ${symbol}. Point A: $${(price * 1.1).toFixed(2)}, B: $${(price * 1.04).toFixed(2)}, C: $${(price * 1.07).toFixed(2)}, D: $${(price * 0.98).toFixed(2)}. Pattern completion at D signals ${direction} momentum.`,
-    xabcd: `XABCD harmonic pattern (Gartley variant) on ${symbol}. X: $${(price * 1.15).toFixed(2)}, A: $${(price * 1.06).toFixed(2)}, B: $${(price * 1.1).toFixed(2)}, C: $${(price * 1.02).toFixed(2)}, D: $${(price * 0.97).toFixed(2)}. 0.786 XA retracement confirmed.`,
-    cypher: `Cypher pattern on ${symbol}. Defined by 0.382–0.618 XA at B, 1.272–1.414 XC at D. Pattern suggests ${direction} reversal from $${(price * 0.96).toFixed(2)} target zone.`,
-    triangle_ascending: `Ascending triangle on ${symbol} with flat resistance at $${(price * 1.03).toFixed(2)} and rising support. Volume declining — breakout expected to the ${direction === "bullish" ? "upside" : "downside"}.`,
-    triangle_descending: `Descending triangle on ${symbol} with flat support at $${(price * 0.97).toFixed(2)} and falling resistance. Typically bearish — watch for breakdown below support.`,
-    triangle_symmetrical: `Symmetrical triangle on ${symbol} between $${(price * 0.97).toFixed(2)} and $${(price * 1.03).toFixed(2)}. Continuation pattern — direction depends on prevailing trend.`,
-    three_drives: `Three Drives pattern on ${symbol}. Three equal price legs with Fibonacci corrections between each drive. ${direction === "bullish" ? "Bullish" : "Bearish"} reversal expected at the third drive completion near $${(price * (direction === "bullish" ? 0.93 : 1.07)).toFixed(2)}.`,
-    double_top: `Double Top reversal on ${symbol}. Two peaks at approximately $${(price * 1.05).toFixed(2)} with valley at $${(price * 0.98).toFixed(2)}. Neckline break would target $${(price * 0.91).toFixed(2)}.`,
-    double_bottom: `Double Bottom reversal on ${symbol}. Two troughs at approximately $${(price * 0.95).toFixed(2)} with peak at $${(price * 1.02).toFixed(2)}. Breakout above peak would target $${(price * 1.09).toFixed(2)}.`,
-  };
-
-  const keyPointsByPattern: Record<
-    ChartPatternType,
-    Array<{ label: string; priceLevel: number; description: string }>
-  > = {
-    head_and_shoulders: [
-      {
-        label: "Left Shoulder",
-        priceLevel: +(price * 1.04).toFixed(2),
-        description: "First peak",
-      },
-      {
-        label: "Head",
-        priceLevel: +(price * 1.08).toFixed(2),
-        description: "Highest peak",
-      },
-      {
-        label: "Right Shoulder",
-        priceLevel: +(price * 1.03).toFixed(2),
-        description: "Third peak",
-      },
-      {
-        label: "Neckline",
-        priceLevel: +(price * 0.95).toFixed(2),
-        description: "Key breakdown level",
-      },
-    ],
-    inverse_head_and_shoulders: [
-      {
-        label: "Left Shoulder",
-        priceLevel: +(price * 0.96).toFixed(2),
-        description: "First trough",
-      },
-      {
-        label: "Head",
-        priceLevel: +(price * 0.88).toFixed(2),
-        description: "Lowest trough",
-      },
-      {
-        label: "Right Shoulder",
-        priceLevel: +(price * 0.95).toFixed(2),
-        description: "Third trough",
-      },
-      {
-        label: "Neckline",
-        priceLevel: +(price * 0.97).toFixed(2),
-        description: "Key breakout level",
-      },
-    ],
-    abcd: [
-      {
-        label: "A",
-        priceLevel: +(price * 1.1).toFixed(2),
-        description: "Swing high",
-      },
-      {
-        label: "B",
-        priceLevel: +(price * 1.04).toFixed(2),
-        description: "0.618 retracement",
-      },
-      {
-        label: "C",
-        priceLevel: +(price * 1.07).toFixed(2),
-        description: "BC projection",
-      },
-      {
-        label: "D",
-        priceLevel: +(price * 0.98).toFixed(2),
-        description: "Pattern completion",
-      },
-    ],
-    xabcd: [
-      {
-        label: "X",
-        priceLevel: +(price * 1.15).toFixed(2),
-        description: "Origin",
-      },
-      {
-        label: "A",
-        priceLevel: +(price * 1.06).toFixed(2),
-        description: "Impulse end",
-      },
-      {
-        label: "B",
-        priceLevel: +(price * 1.1).toFixed(2),
-        description: "0.618 XA",
-      },
-      {
-        label: "C",
-        priceLevel: +(price * 1.02).toFixed(2),
-        description: "AB projection",
-      },
-      {
-        label: "D",
-        priceLevel: +(price * 0.97).toFixed(2),
-        description: "0.786 XA — PRZ",
-      },
-    ],
-    cypher: [
-      {
-        label: "X",
-        priceLevel: +(price * 1.12).toFixed(2),
-        description: "Origin",
-      },
-      {
-        label: "A",
-        priceLevel: +(price * 1.05).toFixed(2),
-        description: "Impulse end",
-      },
-      {
-        label: "B",
-        priceLevel: +(price * 1.09).toFixed(2),
-        description: "0.382–0.618 XA",
-      },
-      {
-        label: "C",
-        priceLevel: +(price * 1.14).toFixed(2),
-        description: "1.272–1.414 XC",
-      },
-      {
-        label: "D",
-        priceLevel: +(price * 0.96).toFixed(2),
-        description: "0.786 XC — PRZ",
-      },
-    ],
-    triangle_ascending: [
-      {
-        label: "Resistance",
-        priceLevel: +(price * 1.03).toFixed(2),
-        description: "Flat top",
-      },
-      {
-        label: "Support 1",
-        priceLevel: +(price * 0.98).toFixed(2),
-        description: "Rising trendline",
-      },
-      {
-        label: "Support 2",
-        priceLevel: +(price * 0.99).toFixed(2),
-        description: "Higher low",
-      },
-    ],
-    triangle_descending: [
-      {
-        label: "Support",
-        priceLevel: +(price * 0.97).toFixed(2),
-        description: "Flat bottom",
-      },
-      {
-        label: "Resistance 1",
-        priceLevel: +(price * 1.03).toFixed(2),
-        description: "Falling trendline",
-      },
-      {
-        label: "Resistance 2",
-        priceLevel: +(price * 1.01).toFixed(2),
-        description: "Lower high",
-      },
-    ],
-    triangle_symmetrical: [
-      {
-        label: "Upper TL",
-        priceLevel: +(price * 1.03).toFixed(2),
-        description: "Descending resistance",
-      },
-      {
-        label: "Lower TL",
-        priceLevel: +(price * 0.97).toFixed(2),
-        description: "Ascending support",
-      },
-      {
-        label: "Apex",
-        priceLevel: +(price * 1.0).toFixed(2),
-        description: "Convergence point",
-      },
-    ],
-    three_drives: [
-      {
-        label: "Drive 1",
-        priceLevel: +(price * 1.04).toFixed(2),
-        description: "First extension",
-      },
-      {
-        label: "Retrace 1",
-        priceLevel: +(price * 1.01).toFixed(2),
-        description: "0.618 pullback",
-      },
-      {
-        label: "Drive 2",
-        priceLevel: +(price * 1.07).toFixed(2),
-        description: "Second extension",
-      },
-      {
-        label: "Retrace 2",
-        priceLevel: +(price * 1.04).toFixed(2),
-        description: "0.618 pullback",
-      },
-      {
-        label: "Drive 3",
-        priceLevel: +(price * 1.1).toFixed(2),
-        description: "Third extension — reversal zone",
-      },
-    ],
-    double_top: [
-      {
-        label: "Top 1",
-        priceLevel: +(price * 1.05).toFixed(2),
-        description: "First resistance test",
-      },
-      {
-        label: "Valley",
-        priceLevel: +(price * 0.98).toFixed(2),
-        description: "Intermediate low",
-      },
-      {
-        label: "Top 2",
-        priceLevel: +(price * 1.05).toFixed(2),
-        description: "Second resistance test",
-      },
-      {
-        label: "Neckline",
-        priceLevel: +(price * 0.98).toFixed(2),
-        description: "Breakdown target",
-      },
-    ],
-    double_bottom: [
-      {
-        label: "Bottom 1",
-        priceLevel: +(price * 0.95).toFixed(2),
-        description: "First support test",
-      },
-      {
-        label: "Peak",
-        priceLevel: +(price * 1.02).toFixed(2),
-        description: "Intermediate high",
-      },
-      {
-        label: "Bottom 2",
-        priceLevel: +(price * 0.95).toFixed(2),
-        description: "Second support test",
-      },
-      {
-        label: "Neckline",
-        priceLevel: +(price * 1.02).toFixed(2),
-        description: "Breakout trigger",
-      },
-    ],
-  };
-
-  const projectedTarget =
-    direction === "bullish"
-      ? +(price * (1 + 0.06 + rng(3) * 0.08)).toFixed(2)
-      : direction === "bearish"
-        ? +(price * (0.94 - rng(3) * 0.08)).toFixed(2)
-        : null;
-
-  const stopLoss =
-    direction === "bullish"
-      ? +(price * (0.96 - rng(4) * 0.03)).toFixed(2)
-      : direction === "bearish"
-        ? +(price * (1.04 + rng(4) * 0.03)).toFixed(2)
-        : null;
-
-  return {
-    symbol,
-    pattern,
-    confidence,
-    direction,
-    description: patternDescriptions[pattern],
-    keyPoints: keyPointsByPattern[pattern],
-    projectedTarget,
-    stopLoss,
-    detectedAt: new Date().toISOString(),
-  };
-}
-
-// ─── Elliott Wave detection helper ────────────────────────────────────────────
-function detectElliottWave(
-  symbol: string,
-  waveType: ElliottWaveType,
-  price: number,
-): ElliottWaveResult {
-  const seed = symbolSeed(symbol) + waveType.length * 7;
-  const rng = (n: number) => seededRandom(seed + n);
-  const confidence = Math.round(40 + rng(1) * 50);
-
-  const waveDescriptions: Record<
-    ElliottWaveType,
-    {
-      desc: string;
-      current: string;
-      waves: Array<{ label: string; priceLevel: number; description: string }>;
-    }
-  > = {
-    impulse_12345: {
-      desc: `Elliott Impulse Wave (1-2-3-4-5) detected on ${symbol}. Wave 3 is the extended wave, currently in Wave ${Math.ceil(rng(2) * 3) + 2}. Waves 1, 3, 5 are motive; 2 and 4 are corrective. Typical 2.618 extension of Wave 1 projected for Wave 3.`,
-      current: `Wave ${Math.ceil(rng(3) * 5)}`,
-      waves: [
-        {
-          label: "Wave 1",
-          priceLevel: +(price * 0.85).toFixed(2),
-          description: "First motive wave",
-        },
-        {
-          label: "Wave 2",
-          priceLevel: +(price * 0.88).toFixed(2),
-          description: "0.618 retracement of Wave 1",
-        },
-        {
-          label: "Wave 3",
-          priceLevel: +(price * 1.02).toFixed(2),
-          description: "Extended motive wave (longest)",
-        },
-        {
-          label: "Wave 4",
-          priceLevel: +(price * 0.96).toFixed(2),
-          description: "Corrective wave (no overlap Wave 1)",
-        },
-        {
-          label: "Wave 5",
-          priceLevel: +(price * 1.07).toFixed(2),
-          description: "Final motive wave",
-        },
-      ],
-    },
-    correction_abc: {
-      desc: `Elliott Correction Wave (A-B-C) detected on ${symbol}. This three-wave structure corrects the prior impulse. Wave C often equals Wave A in length. Currently in Wave ${["A", "B", "C"][Math.floor(rng(2) * 3)]}.`,
-      current: `Wave ${["A", "B", "C"][Math.floor(rng(3) * 3)]}`,
-      waves: [
-        {
-          label: "Wave A",
-          priceLevel: +(price * 0.92).toFixed(2),
-          description: "First corrective leg down",
-        },
-        {
-          label: "Wave B",
-          priceLevel: +(price * 0.97).toFixed(2),
-          description: "Partial retracement up",
-        },
-        {
-          label: "Wave C",
-          priceLevel: +(price * 0.86).toFixed(2),
-          description: "Final corrective leg (= Wave A)",
-        },
-      ],
-    },
-    triangle_abcde: {
-      desc: `Elliott Triangle Wave (A-B-C-D-E) on ${symbol}. Five contracting waves forming a triangle continuation pattern. Breakout in the direction of the prior trend expected after Wave E.`,
-      current: `Wave ${["A", "B", "C", "D", "E"][Math.floor(rng(2) * 5)]}`,
-      waves: [
-        {
-          label: "Wave A",
-          priceLevel: +(price * 1.03).toFixed(2),
-          description: "First triangle wave",
-        },
-        {
-          label: "Wave B",
-          priceLevel: +(price * 0.98).toFixed(2),
-          description: "Second wave — lower high",
-        },
-        {
-          label: "Wave C",
-          priceLevel: +(price * 1.01).toFixed(2),
-          description: "Third wave — lower high than A",
-        },
-        {
-          label: "Wave D",
-          priceLevel: +(price * 0.99).toFixed(2),
-          description: "Fourth wave — higher low than B",
-        },
-        {
-          label: "Wave E",
-          priceLevel: +(price * 1.0).toFixed(2),
-          description: "Fifth wave — thrust out of triangle",
-        },
-      ],
-    },
-    double_combo_wxy: {
-      desc: `Elliott Double Combo Wave (W-X-Y) on ${symbol}. Two corrective patterns linked by an X wave. W and Y are both complete corrective structures. Complex correction before resumption of trend.`,
-      current: `Wave ${["W", "X", "Y"][Math.floor(rng(2) * 3)]}`,
-      waves: [
-        {
-          label: "Wave W",
-          priceLevel: +(price * 0.93).toFixed(2),
-          description: "First corrective pattern",
-        },
-        {
-          label: "Wave X",
-          priceLevel: +(price * 0.97).toFixed(2),
-          description: "Linking wave (counter-trend)",
-        },
-        {
-          label: "Wave Y",
-          priceLevel: +(price * 0.88).toFixed(2),
-          description: "Second corrective pattern",
-        },
-      ],
-    },
-    triple_combo_wxyxz: {
-      desc: `Elliott Triple Combo Wave (W-X-Y-X-Z) on ${symbol}. Three corrective structures linked by two X waves. Rare pattern signifying prolonged consolidation before a powerful trend resumption.`,
-      current: `Wave ${["W", "X", "Y", "X2", "Z"][Math.floor(rng(2) * 5)]}`,
-      waves: [
-        {
-          label: "Wave W",
-          priceLevel: +(price * 0.95).toFixed(2),
-          description: "First corrective structure",
-        },
-        {
-          label: "Wave X",
-          priceLevel: +(price * 0.98).toFixed(2),
-          description: "First linking wave",
-        },
-        {
-          label: "Wave Y",
-          priceLevel: +(price * 0.91).toFixed(2),
-          description: "Second corrective structure",
-        },
-        {
-          label: "Wave X2",
-          priceLevel: +(price * 0.94).toFixed(2),
-          description: "Second linking wave",
-        },
-        {
-          label: "Wave Z",
-          priceLevel: +(price * 0.87).toFixed(2),
-          description: "Third corrective structure",
-        },
-      ],
-    },
-  };
-
-  const info = waveDescriptions[waveType];
-  const projectedTarget = +(price * (1 + 0.05 + rng(5) * 0.12)).toFixed(2);
-
-  return {
-    symbol,
-    waveType,
-    confidence,
-    currentWave: info.current,
-    description: info.desc,
-    waves: info.waves,
-    projectedTarget,
-    detectedAt: new Date().toISOString(),
-  };
 }
 
 // ─── Tool Registry ─────────────────────────────────────────────────────────────
@@ -752,7 +267,7 @@ export const webMcpTools: WebMcpTool[] = [
           type: "array",
           items: { type: "string" },
           description:
-            "Optional phrases to highlight in yellow in the opened report, in addition to auto-detected figures, dates, and risk language",
+            "Key phrases or full sentences FROM the filing to highlight in yellow for the user — e.g. the specific risk statements, revenue drivers, guidance, or figures relevant to their question. Copy the exact text so it can be matched. If omitted, the report opens with no highlights.",
         },
       },
       required: ["symbol"],
@@ -1314,22 +829,30 @@ export const webMcpTools: WebMcpTool[] = [
       const s2 = String(params.symbol2 ?? "").toUpperCase();
       const meta1 = STOCK_UNIVERSE.find((s) => s.symbol === s1);
       const meta2 = STOCK_UNIVERSE.find((s) => s.symbol === s2);
-      const beta1 = meta1?.beta ?? 1.0;
-      const beta2 = meta2?.beta ?? 1.0;
       const sector1 = meta1?.sector ?? "Unknown";
       const sector2 = meta2?.sector ?? "Unknown";
       const sameSector = sector1 === sector2;
-      const baseCorr = sameSector ? 0.7 : 0.4;
-      const betaDiff = Math.abs(beta1 - beta2);
-      const correlation = Math.max(
-        -1,
-        Math.min(
-          1,
-          baseCorr -
-            betaDiff * 0.2 +
-            (seededRandom(symbolSeed(s1 + s2)) - 0.5) * 0.2,
-        ),
-      );
+
+      // Real Pearson correlation of daily returns over the overlapping window.
+      const series = await getLocalOhlcv([s1, s2]);
+      const c1 = series.find((x) => x.symbol === s1)?.candles ?? [];
+      const c2 = series.find((x) => x.symbol === s2)?.candles ?? [];
+      const m1 = new Map(c1.map((c) => [c.date, c.close]));
+      const m2 = new Map(c2.map((c) => [c.date, c.close]));
+      const dates = [...m1.keys()].filter((d) => m2.has(d)).sort();
+      const r1: number[] = [];
+      const r2: number[] = [];
+      for (let i = 1; i < dates.length; i++) {
+        const a0 = m1.get(dates[i - 1])!;
+        const a1 = m1.get(dates[i])!;
+        const b0 = m2.get(dates[i - 1])!;
+        const b1 = m2.get(dates[i])!;
+        if (a0 > 0 && b0 > 0) {
+          r1.push((a1 - a0) / a0);
+          r2.push((b1 - b0) / b0);
+        }
+      }
+      const correlation = +pearson(r1, r2).toFixed(3);
       const label =
         correlation > 0.7
           ? "High positive"
@@ -1348,12 +871,17 @@ export const webMcpTools: WebMcpTool[] = [
               {
                 symbol1: s1,
                 symbol2: s2,
-                correlation: +correlation.toFixed(3),
+                correlation,
                 label,
+                sampleDays: r1.length,
                 sector1,
                 sector2,
                 sameSector,
-                interpretation: `${s1} and ${s2} have ${label.toLowerCase()} correlation. ${sameSector ? "They are in the same sector." : "They are in different sectors — good for diversification."}`,
+                method: "Pearson correlation of daily returns from historical closes.",
+                interpretation:
+                  r1.length < 20
+                    ? `Not enough overlapping history to compute a reliable correlation for ${s1} and ${s2}.`
+                    : `${s1} and ${s2} have ${label.toLowerCase()} correlation (r=${correlation}) over ${r1.length} trading days. ${sameSector ? "Same sector." : "Different sectors — better for diversification."}`,
               },
               null,
               2,
@@ -1411,11 +939,44 @@ export const webMcpTools: WebMcpTool[] = [
           ],
         };
       }
-      const quote = await getStockQuote(symbol);
-      const price = quote?.price ?? 100;
-      const result = detectPattern(symbol, pattern, price);
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      const detected = detectPatternsForSymbol(symbol, candles);
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+      const wanted = norm(pattern);
+      const match =
+        detected.find((p) => norm(p.name).includes(wanted) || wanted.includes(norm(p.name))) ?? null;
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                symbol,
+                requestedPattern: pattern,
+                present: Boolean(match),
+                match,
+                detectedPatterns: detected.map((p) => ({
+                  name: p.name,
+                  direction: p.direction,
+                  confidence: p.confidence,
+                  entryPrice: p.entryPrice ?? null,
+                  targetPrice: p.targetPrice ?? null,
+                  stopLoss: p.stopLoss ?? null,
+                  rationale: p.rationale,
+                })),
+                method: "Detected from real swing structure in the historical price series.",
+                note: match
+                  ? `A ${match.name} pattern is present on ${symbol}.`
+                  : detected.length
+                    ? `No ${pattern} detected on ${symbol}; ${detected.length} other pattern(s) were found.`
+                    : `No significant chart patterns detected on ${symbol} in the available history.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   },
@@ -1460,9 +1021,47 @@ export const webMcpTools: WebMcpTool[] = [
           ],
         };
       }
-      const quote = await getStockQuote(symbol);
-      const price = quote?.price ?? 100;
-      const result = detectElliottWave(symbol, waveType, price);
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      const closes = candles.map((c) => c.close);
+      const window = Math.max(3, Math.floor(closes.length / 40));
+      const swings = localSwings(closes, window);
+      const labelsByType: Record<ElliottWaveType, string[]> = {
+        impulse_12345: ["Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5"],
+        correction_abc: ["Wave A", "Wave B", "Wave C"],
+        triangle_abcde: ["Wave A", "Wave B", "Wave C", "Wave D", "Wave E"],
+        double_combo_wxy: ["Wave W", "Wave X", "Wave Y"],
+        triple_combo_wxyxz: ["Wave W", "Wave X", "Wave Y", "Wave X2", "Wave Z"],
+      };
+      const labels = labelsByType[waveType];
+      const chosen = swings.slice(-labels.length);
+      const waves = labels.map((label, i) => {
+        const sw = chosen[i];
+        return {
+          label,
+          priceLevel: sw ? +sw.price.toFixed(2) : 0,
+          description: sw
+            ? `${sw.type === "high" ? "Swing high" : "Swing low"} from real price action`
+            : "Insufficient swing data",
+        };
+      });
+      const confidence = Math.round(Math.min(90, (chosen.length / labels.length) * 80 + 10));
+      const lastPrice = closes[closes.length - 1] ?? 0;
+      const firstWave = waves[0]?.priceLevel ?? lastPrice;
+      const projectedTarget =
+        firstWave > 0
+          ? +(lastPrice * (1 + ((lastPrice - firstWave) / firstWave) * 0.5)).toFixed(2)
+          : null;
+      const result: ElliottWaveResult = {
+        symbol,
+        waveType,
+        confidence,
+        currentWave: waves[waves.length - 1]?.label ?? labels[labels.length - 1],
+        description: `Elliott ${waveType} labelled onto the ${chosen.length} most recent swing pivots detected in ${symbol}'s real price history. Wave labelling is heuristic; pivot prices are actual.`,
+        waves,
+        projectedTarget,
+        detectedAt: new Date().toISOString(),
+      };
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
@@ -1483,49 +1082,36 @@ export const webMcpTools: WebMcpTool[] = [
     },
     async execute(params) {
       const symbol = String(params.symbol ?? "").toUpperCase();
-      const quote = await getStockQuote(symbol);
-      const price = quote?.price ?? 100;
-      const seed = symbolSeed(symbol);
-      const rng = (n: number) => seededRandom(seed + n);
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      const last = candles[candles.length - 1];
+      if (!last) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: `No price history for ${symbol}.` }) }],
+        };
+      }
+      const piv = pivotLevels(last.high, last.low, last.close);
+      const recent = candles.slice(-60);
+      const recentHigh = Math.max(...recent.map((c) => c.high));
+      const recentLow = Math.min(...recent.map((c) => c.low));
       const levels = {
         symbol,
-        currentPrice: price,
+        currentPrice: +last.close.toFixed(2),
+        method: "Classic floor-trader pivots from the latest bar, plus the 60-day range.",
+        pivotPoint: +piv.pivot.toFixed(2),
         support: [
-          {
-            level: +(price * (0.97 - rng(1) * 0.02)).toFixed(2),
-            strength: "strong",
-            type: "S1",
-          },
-          {
-            level: +(price * (0.93 - rng(2) * 0.02)).toFixed(2),
-            strength: "moderate",
-            type: "S2",
-          },
-          {
-            level: +(price * (0.87 - rng(3) * 0.03)).toFixed(2),
-            strength: "weak",
-            type: "S3",
-          },
+          { level: +piv.s1.toFixed(2), strength: "strong", type: "S1" },
+          { level: +piv.s2.toFixed(2), strength: "moderate", type: "S2" },
+          { level: +piv.s3.toFixed(2), strength: "weak", type: "S3" },
         ],
         resistance: [
-          {
-            level: +(price * (1.03 + rng(4) * 0.02)).toFixed(2),
-            strength: "strong",
-            type: "R1",
-          },
-          {
-            level: +(price * (1.07 + rng(5) * 0.02)).toFixed(2),
-            strength: "moderate",
-            type: "R2",
-          },
-          {
-            level: +(price * (1.13 + rng(6) * 0.03)).toFixed(2),
-            strength: "weak",
-            type: "R3",
-          },
+          { level: +piv.r1.toFixed(2), strength: "strong", type: "R1" },
+          { level: +piv.r2.toFixed(2), strength: "moderate", type: "R2" },
+          { level: +piv.r3.toFixed(2), strength: "weak", type: "R3" },
         ],
-        pivotPoint: +(price * 1.0).toFixed(2),
-        notes: `Key S1 at $${(price * 0.97).toFixed(2)} and R1 at $${(price * 1.03).toFixed(2)} are the immediate levels to watch for ${symbol}.`,
+        recent60DayHigh: +recentHigh.toFixed(2),
+        recent60DayLow: +recentLow.toFixed(2),
+        notes: `S1 at $${piv.s1.toFixed(2)} and R1 at $${piv.r1.toFixed(2)} are the immediate pivot levels for ${symbol}. 60-day range: $${recentLow.toFixed(2)}–$${recentHigh.toFixed(2)}.`,
       };
       return {
         content: [{ type: "text", text: JSON.stringify(levels, null, 2) }],
@@ -2580,63 +2166,25 @@ export const webMcpTools: WebMcpTool[] = [
       const symbol = String(params.symbol ?? "").toUpperCase();
       const strategy = String(params.strategy ?? "buy_hold").toLowerCase();
       const capital = Number(params.initial_capital ?? 10000);
-      const quote = await getStockQuote(symbol);
-      const currentPrice = quote?.price ?? 100;
-      const seed = symbolSeed(symbol + strategy);
-      const rng = (n: number) => seededRandom(seed + n);
-
-      // Deterministic simulated backtest results
-      const strategyParams: Record<
-        string,
-        {
-          totalReturn: number;
-          maxDD: number;
-          winRate: number;
-          trades: number;
-          sharpe: number;
-        }
-      > = {
-        sma_crossover: {
-          totalReturn: -5 + rng(1) * 45,
-          maxDD: -(5 + rng(2) * 20),
-          winRate: 0.45 + rng(3) * 0.15,
-          trades: Math.round(12 + rng(4) * 20),
-          sharpe: 0.5 + rng(5) * 1.5,
-        },
-        rsi_mean_revert: {
-          totalReturn: 5 + rng(1) * 35,
-          maxDD: -(3 + rng(2) * 15),
-          winRate: 0.5 + rng(3) * 0.2,
-          trades: Math.round(20 + rng(4) * 30),
-          sharpe: 0.8 + rng(5) * 1.2,
-        },
-        buy_hold: {
-          totalReturn: 8 + rng(1) * 40,
-          maxDD: -(10 + rng(2) * 25),
-          winRate: 1.0,
-          trades: 1,
-          sharpe: 1.0 + rng(5) * 0.8,
-        },
-      };
-
-      const sp = strategyParams[strategy] ?? strategyParams.buy_hold;
-      const endDate = new Date();
-      const startDate = new Date(endDate.getTime() - 365 * 24 * 60 * 60 * 1000);
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      const closes = candles.map((c) => c.close);
+      const metrics = runBacktest(closes, strategy);
 
       const result: BacktestResult = {
         symbol,
         strategy,
-        startDate: startDate.toISOString().split("T")[0],
-        endDate: endDate.toISOString().split("T")[0],
-        totalReturn: +sp.totalReturn.toFixed(2),
-        annualizedReturn: +sp.totalReturn.toFixed(2),
-        maxDrawdown: +sp.maxDD.toFixed(2),
-        winRate: +sp.winRate.toFixed(3),
-        totalTrades: sp.trades,
-        sharpeRatio: +sp.sharpe.toFixed(2),
+        startDate: candles[0]?.date ?? "",
+        endDate: candles[candles.length - 1]?.date ?? "",
+        totalReturn: metrics.totalReturn,
+        annualizedReturn: metrics.annualizedReturn,
+        maxDrawdown: metrics.maxDrawdown,
+        winRate: metrics.winRate,
+        totalTrades: metrics.totalTrades,
+        sharpeRatio: metrics.sharpeRatio,
       };
 
-      const finalCapital = capital * (1 + sp.totalReturn / 100);
+      const finalCapital = capital * (1 + metrics.totalReturn / 100);
       return {
         content: [
           {
@@ -2647,8 +2195,9 @@ export const webMcpTools: WebMcpTool[] = [
                 initialCapital: capital,
                 finalCapital: +finalCapital.toFixed(2),
                 profitLoss: +(finalCapital - capital).toFixed(2),
+                dataPoints: closes.length,
                 disclaimer:
-                  "Backtested on simulated data. Past performance does not guarantee future results.",
+                  "Backtested on real historical daily closes from the dataset. Past performance does not guarantee future results.",
               },
               null,
               2,
@@ -3333,34 +2882,44 @@ export const webMcpTools: WebMcpTool[] = [
     name: "get_earnings_calendar",
     category: "Education",
     description:
-      "Return simulated upcoming earnings dates for the tracked stock universe.",
+      "Return upcoming earnings dates (next ~120 days) for the tracked stock universe, from Finnhub's earnings calendar.",
     inputSchema: { type: "object", properties: {} },
     async execute() {
-      const now = new Date();
-      const calendar = STOCK_UNIVERSE.map((s, i) => {
-        const daysAhead = (i * 7 + 3) % 90;
-        const date = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
-        return {
-          symbol: s.symbol,
-          sector: s.sector,
-          earningsDate: date.toISOString().split("T")[0],
-          daysUntil: daysAhead,
-          estimatedEPS: +(
-            seededRandom(symbolSeed(s.symbol) + 99) * 5 +
-            0.5
-          ).toFixed(2),
-          previousEPS: +(
-            seededRandom(symbolSeed(s.symbol) + 88) * 5 +
-            0.5
-          ).toFixed(2),
-        };
-      }).sort((a, b) => a.daysUntil - b.daysUntil);
+      const from = new Date();
+      const to = new Date();
+      to.setDate(to.getDate() + 120);
+      const fmt = (d: Date) => d.toISOString().split("T")[0];
+      const perSymbol = await Promise.all(
+        STOCK_UNIVERSE.map((s) => getEarningsCalendar(fmt(from), fmt(to), s.symbol)),
+      );
+      const sectorOf = new Map(STOCK_UNIVERSE.map((s) => [s.symbol, s.sector]));
+      const items = perSymbol
+        .flat()
+        .filter((e) => e.date && e.symbol)
+        .map((e) => ({
+          symbol: e.symbol,
+          sector: sectorOf.get(String(e.symbol)) ?? null,
+          earningsDate: e.date,
+          hour: e.hour ?? null,
+          epsEstimate: e.epsEstimate ?? null,
+          epsActual: e.epsActual ?? null,
+          revenueEstimate: e.revenueEstimate ?? null,
+        }))
+        .sort((a, b) => String(a.earningsDate).localeCompare(String(b.earningsDate)));
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
-              { earningsCalendar: calendar, nextEarnings: calendar[0] },
+              {
+                source: "Finnhub earnings calendar",
+                count: items.length,
+                earningsCalendar: items,
+                nextEarnings: items[0] ?? null,
+                note: items.length
+                  ? undefined
+                  : "No upcoming earnings returned (the data provider may not cover these dates on the free tier).",
+              },
               null,
               2,
             ),
@@ -3372,6 +2931,11 @@ export const webMcpTools: WebMcpTool[] = [
 ];
 
 // ─── Registration ──────────────────────────────────────────────────────────────
+// Track which tools have already been registered so repeated calls (React
+// mounts, retries, the panel button) don't re-register and trigger the
+// WebMCP runtime's "duplicate tool name" error.
+const registeredToolNames = new Set<string>();
+
 export async function registerWebMcpTools() {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return webMcpTools;
@@ -3391,8 +2955,10 @@ export async function registerWebMcpTools() {
 
   let registeredCount = 0;
   for (const tool of webMcpTools) {
+    if (registeredToolNames.has(tool.name)) continue;
     try {
       await mcp.registerTool(tool);
+      registeredToolNames.add(tool.name);
       registeredCount++;
     } catch (error) {
       console.error(`❌ Failed to register WebMCP tool '${tool.name}':`, error);

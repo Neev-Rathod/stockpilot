@@ -2,9 +2,9 @@
 
 **A virtual stock-trading dashboard that turns itself into a set of tools an AI agent can drive — built for the WebMCP hackathon.**
 
-StockPilot is a [Next.js](https://nextjs.org) app that looks like a professional trading terminal (live tickers, charts, portfolio, watchlist, news, IPOs, SEC filings), but its real purpose is to expose ~38 in-page **[WebMCP](https://github.com/webmachinelearning/webmcp) tools**. When you run it in a browser that supports the experimental WebMCP API, any AI model on the page can call these tools to search stocks, analyze charts, place virtual trades, manage a portfolio, and navigate the app — all client-side.
+StockPilot is a [Next.js](https://nextjs.org) app that looks like a professional trading terminal (charts, portfolio, watchlist, news, IPOs, SEC filings), but its real purpose is to expose **42 in-page [WebMCP](https://github.com/webmachinelearning/webmcp) tools**. When you run it in a browser that supports the experimental WebMCP API (e.g. ChatGPT's in-app browser), an AI agent on the page can call these tools to search stocks, run real technical analysis, place virtual trades, manage a portfolio, analyze SEC filings, and drive the UI live — all client-side.
 
-All trading is **simulated** with a virtual $100,000 balance. No real money, no brokerage account. Market quotes/news come from real APIs (Finnhub / Twelve Data); the technical-analysis tools return deterministic, seeded demo data (see [Caveats](#caveats)).
+All trading is **simulated** with a virtual $100,000 balance — no real money or brokerage. But the data is real: prices come from an imported ~10-year daily OHLCV dataset stored in **Supabase**, and the analysis tools (risk score, correlation, support/resistance, backtests, pattern detection) are **computed from that real history** — not seeded. Company news, SEC filings, and earnings come from **Finnhub**.
 
 ---
 
@@ -23,21 +23,21 @@ All trading is **simulated** with a virtual $100,000 balance. No real money, no 
 
 ## Features
 
-- **Dashboard** — portfolio overview, live watchlist, and favorites with a "1-second live price" ticker.
-- **Virtual trading** — buy/sell with a $100k paper balance, persisted to `localStorage`.
-- **Markets, News, IPOs, SEC filings, Compare, Learn** pages.
-- **Per-stock detail pages** with TradingView-style charts.
+- **Auth + persistence** — email/password sign-in via Supabase; portfolio, watchlist, and alerts persist per-user.
+- **Virtual trading** — buy/sell with a $100k paper balance.
+- **Markets, News, IPOs, SEC filings, Compare, Learn** pages, plus per-stock detail pages.
+- **Interactive charts** — one shared engine (candles / bars / line / area, indicators, drawings) across the whole app; multi-symbol compare with a color legend.
 - **Admin diagnostics page** (`/admin`) showing Finnhub API call stats.
-- **WebMCP tool registry** — the headline feature: 38 tools across 7 categories, auto-registered on page load.
+- **WebMCP tool registry** — the headline feature: 42 tools across 8 categories, auto-registered on page load.
 
 ## Tech stack
 
 - **Next.js 16** (App Router) + **React 19**
 - **Tailwind CSS v4**
-- **Zustand** (portfolio state, persisted to `localStorage`)
-- **TanStack Query** (data fetching / polling)
-- **lightweight-charts** + TradingView widgets, **Recharts**, **Framer Motion**, **driver.js** (guided tour), **sonner** (toasts)
-- Market data via **Finnhub** and **Twelve Data** REST APIs, proxied through Next.js route handlers
+- **Supabase** (Postgres) — auth, per-user data, and the imported price dataset
+- **Zustand** (client state) + **TanStack Query** (data fetching)
+- **lightweight-charts** (charts) · **Recharts** (allocation) · **Framer Motion** · **driver.js** (tour) · **sonner** (toasts)
+- **Finnhub** REST API (news, SEC filings, earnings, company profiles), proxied through Next.js route handlers
 
 ---
 
@@ -138,9 +138,40 @@ Registration happens automatically on page load (`components/providers.tsx`), an
 
 ---
 
+## How WebMCP is implemented
+
+Every capability the app exposes to an agent is registered on page load through the
+browser's experimental WebMCP surface, `document.modelContext.registerTool(...)`.
+The registration lives in [`lib/webmcp.ts`](lib/webmcp.ts) (driven from
+[`components/providers.tsx`](components/providers.tsx)) and follows the standard shape:
+
+```js
+document.modelContext.registerTool({
+  name: "analyze_sec_filings",
+  description: "Fetch a company's most material SEC filing, open it in the report viewer, highlight the key passages, and return a risk score plus a fundamental snapshot.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      symbol: { type: "string", description: "Ticker symbol like AAPL" },
+      highlight: { type: "array", items: { type: "string" }, description: "Phrases to highlight in the report" },
+    },
+    required: ["symbol"],
+  },
+  execute: async (input) => {
+    // …fetch data, compute analysis, drive the UI via a CustomEvent…
+    return { content: [{ type: "text", text: "<JSON result>" }] };
+  },
+});
+```
+
+Registration is **idempotent** (guarded by a `Set` of registered names) so repeated
+React mounts don't trigger duplicate-tool errors. Tools that change UI (SEC highlight,
+compare sync) do so by dispatching browser `CustomEvent`s that the React pages listen for,
+so a human and an agent share one live view.
+
 ## WebMCP tool reference
 
-Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `document.modelContext.registerTool(...)`. Each returns a `{ content: [{ type: "text", text: "<JSON>" }] }` payload. **38 tools across 7 categories.**
+Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `document.modelContext.registerTool(...)`. Each returns a `{ content: [{ type: "text", text: "<JSON>" }] }` payload. **42 tools across 8 categories**, all computed from real Supabase / Finnhub data.
 
 ### 📈 Market Data
 
@@ -213,7 +244,8 @@ Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `docume
 | Tool | Description | Key params |
 |---|---|---|
 | `start_beginner_tutorial` | Guided tutorial on a topic (intro, candlesticks, portfolio, risk, technicals, fundamentals, Elliott waves, patterns). | `topic` |
-| `get_earnings_calendar` | Simulated upcoming earnings dates for the universe. | — |
+| `get_earnings_calendar` | Upcoming earnings dates for the universe — real, from Finnhub. | — |
+| `analyze_sec_filings` | Open a company's most material SEC filing inline, highlight agent-chosen passages, and return a real risk score + fundamental snapshot. | `symbol`, `highlight?` |
 
 ---
 
@@ -222,41 +254,45 @@ Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `docume
 ```
 app/
   api/
-    finnhub/route.ts        # Server-side Finnhub proxy (hides API key, logs calls)
-    twelve-data/route.ts    # Twelve Data proxy
-    market/catalog/route.ts # Symbol catalog
-    ohlcv/route.ts          # Reads local CSV OHLCV data
-    sec/report/route.ts     # Fetches an SEC report by URL
+    finnhub/route.ts        # Server-side Finnhub proxy (hides API key)
+    market/catalog/route.ts # Symbol search catalog
+    sec/report/route.ts     # Fetches an SEC report (SEC-domain allowlisted)
   admin/                    # API diagnostics dashboard
+  login/ signup/ alerts/    # Auth pages + price-alerts screen
   compare/ ipos/ learn/ markets/ news/ orders/
   portfolio/ sec-filings/ watchlist/ stock/[symbol]/
   page.tsx                  # Home dashboard
   layout.tsx                # App shell (sidebar + top bar)
+proxy.ts                    # Session refresh + route gating (Next 16 "middleware")
 components/
   webmcp-panel.tsx          # WebMCP status + tool registry UI
-  providers.tsx             # Registers WebMCP tools on mount
-  layout/ portfolio/ stocks/ comparison/ ui/
+  providers.tsx             # Registers WebMCP tools + syncs auth → store
+  comparison/               # Shared chart engine + compare dashboard
+  layout/ portfolio/ stocks/ ui/
 lib/
-  webmcp.ts                 # ★ All 38 WebMCP tool definitions
-  portfolio-store.ts        # Zustand store (virtual balance, holdings, alerts)
-  finnhub/client.ts         # Client-side wrappers around /api/finnhub
-  twelve-data/              # Twelve Data client, cache, transformers, types
-  use-live-quotes.ts        # 30s fetch + 1s cosmetic price drift
-  fallback-data.ts          # Synthetic prices when no API key
+  webmcp.ts                 # ★ All 42 WebMCP tool definitions
+  supabase/                 # browser client, typed queries, per-user persistence
+  finnhub/client.ts         # Wrappers (quotes from Supabase; news/filings/earnings from Finnhub)
+  ohlcv.ts                  # OHLCV history from Supabase (paginated)
+  sec-analysis.ts, ta.ts    # Pure analysis math (risk, pivots, correlation, backtest) + tests
+  indicators.ts             # SMA / EMA / RSI
+  portfolio-store.ts        # Zustand store, hydrated from / written through to Supabase
+supabase/migrations/        # SQL schema + RLS + signup trigger
+scripts/import-csv-to-supabase.mjs  # One-time CSV → Supabase import
 ```
 
 ## How data flows
 
-1. Components/hooks call helpers in `lib/finnhub/client.ts`, which fetch from the local `/api/finnhub` route.
-2. `app/api/finnhub/route.ts` attaches the server-side `FINNHUB_API_KEY` and proxies to Finnhub, so the key never reaches the browser.
-3. `lib/use-live-quotes.ts` refetches quotes every **30s** and applies a small random drift every **1s** to animate prices.
-4. Portfolio actions mutate the **Zustand** store, persisted to `localStorage` under `stockpilot-portfolio`.
-5. WebMCP tools call these same helpers/store, so an agent and the UI share one source of truth.
+1. UI and WebMCP tools call helpers in `lib/supabase/queries.ts` and `lib/finnhub/client.ts`.
+2. **Prices, charts, and analysis** read the imported OHLCV from Supabase (`stock_prices`); the latest close is the current price (no synthetic ticks).
+3. **News, SEC filings, earnings, and profiles** proxy through `app/api/finnhub/route.ts`, which attaches the server-side `FINNHUB_API_KEY` so it never reaches the browser.
+4. **Portfolio, watchlist, and alerts** live in the Zustand store, hydrated from and written through to Supabase per user (Row-Level Security).
+5. WebMCP tools call these same helpers/store, so an agent and the UI share one live source of truth.
 
 ## Caveats
 
-- **Simulated analysis:** `detect_chart_pattern`, `detect_elliott_wave`, `get_support_resistance`, `backtest_strategy`, `get_correlation`, and `get_earnings_calendar` return **deterministic, seeded demo values** derived from the ticker symbol — they do not analyze real price history. Great for demos; not real trading signals.
-- **Cosmetic "live" ticks:** the 1-second price movement is randomized drift, not real tick data.
+- **End-of-day data, no live feed:** prices are the latest close from the imported ~10-year dataset — there's no intraday streaming, so quotes don't tick in real time.
+- **Pattern/Elliott detection is heuristic:** `detect_chart_pattern` and `detect_elliott_wave` read *real* swing structure, but labelling patterns/waves is inherently subjective — treat them as signals, not certainties.
 - **Not financial advice.** Paper-trading demo only.
 
 ---

@@ -371,6 +371,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(result.body, { status: result.status });
     }
 
+    if (type === "earnings-calendar") {
+      if (!from || !to) {
+        return NextResponse.json(
+          { error: "Missing from or to date." },
+          { status: 400 },
+        );
+      }
+
+      const result = await proxyFinnhub("/calendar/earnings", { from, to, symbol });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
     if (type === "sec-filings") {
       const result = await proxyFinnhub("/stock/filings", {
         symbol,
