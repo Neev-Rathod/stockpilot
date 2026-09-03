@@ -70,7 +70,7 @@ npm install
 
 ### 4. Configure environment variables
 
-Create a file named `.env` in the project root:
+Create file named `.env` in the project root:
 
 ```env
 # Supabase — required for auth, portfolio, and stock data.
