@@ -117,11 +117,28 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
           setReviewDoc({ loading: false, error: p.error, html: "" });
           return;
         }
-        const plain = toPlainText(p.rawText ?? "", p.kind ?? "text").slice(0, 40000);
-        const escaped = escapeHtml(plain);
-        const terms = [...importantSentences(plain), ...review.agentTerms].map((t) => escapeHtml(t));
-        const regex = buildReviewRegex(terms);
-        setReviewDoc({ loading: false, html: markMatches(escaped, regex, { n: 0 }) });
+        const kind = p.kind ?? "text";
+        const rawText = p.rawText ?? "";
+
+        // For plain-text filings, produce structured HTML first so the review
+        // is readable; then highlight on top of it.
+        let baseHtml: string;
+        if (kind === "html") {
+          baseHtml = sanitizeHtml(rawText);
+        } else if (kind === "xml") {
+          baseHtml =
+            xmlToReadableHtml(rawText) ??
+            `<pre style="white-space:pre-wrap;word-break:break-word">${escapeHtml(stripTags(rawText))}</pre>`;
+        } else {
+          baseHtml = secTextToHtml(rawText);
+        }
+
+        // For sentence extraction still use plain text
+        const plain = toPlainText(rawText, kind).slice(0, 40000);
+        const terms = [...importantSentences(plain), ...review.agentTerms];
+        const regex = buildReviewRegex(terms.map((t) => escapeHtml(t)));
+        const highlighted = highlightHtml(baseHtml, regex);
+        setReviewDoc({ loading: false, html: buildHtmlDoc(highlighted) });
       })
       .catch((e) => {
         if (!cancelled) setReviewDoc({ loading: false, error: String(e), html: "" });
@@ -277,10 +294,7 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
           ) : reviewDoc?.error ? (
             <div className="rounded-lg border border-down/30 bg-[color:rgba(234,57,67,0.08)] p-3 text-sm text-down">{reviewDoc.error}</div>
           ) : (
-            <div
-              className="sp-report max-h-[420px] overflow-auto rounded-lg border border-hairline bg-app p-4 text-[13px] leading-7 text-txt-dim"
-              dangerouslySetInnerHTML={{ __html: reviewDoc?.html ?? "" }}
-            />
+            <DocFrame doc={reviewDoc?.html ?? ""} height={420} />
           )}
         </div>
       )}
@@ -467,19 +481,17 @@ function ReportView({ report, terms }: { report: ReportState | null; terms: stri
     return <DocFrame doc={doc} />;
   }
 
-  const text = highlightText(report.rawText || "No report content.", regex);
-  return (
-    <pre
-      className="sp-report max-h-[560px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-hairline bg-app p-4 text-[12px] leading-6 text-txt-dim"
-      dangerouslySetInnerHTML={{ __html: text }}
-    />
-  );
+  // Plain-text filings (8-K cover pages, some 10-Q/10-K text returns, etc.)
+  // Convert to structured readable HTML instead of a raw <pre> dump.
+  const structuredHtml = secTextToHtml(report.rawText || "No report content.");
+  const doc = buildHtmlDoc(highlightHtml(structuredHtml, regex));
+  return <DocFrame doc={doc} />;
 }
 
-function DocFrame({ doc }: { doc: string }) {
+function DocFrame({ doc, height = 560 }: { doc: string; height?: number }) {
   return (
     <div className="overflow-hidden rounded-lg border border-hairline">
-      <iframe title="SEC report" sandbox="" srcDoc={doc} className="h-[560px] w-full bg-white" />
+      <iframe title="SEC report" sandbox="" srcDoc={doc} className="w-full bg-white" style={{ height }} />
     </div>
   );
 }
@@ -608,12 +620,6 @@ function highlightHtml(html: string, regex: RegExp | null): string {
     .join("");
 }
 
-function highlightText(raw: string, regex: RegExp | null): string {
-  const escaped = escapeHtml(raw);
-  if (!regex) return escaped;
-  return markMatches(escaped, regex, { n: 0 });
-}
-
 function sanitizeHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -624,13 +630,241 @@ function sanitizeHtml(html: string): string {
     .replace(/javascript:/gi, "");
 }
 
+/**
+ * secTextToHtml — convert a raw SEC plain-text filing into readable, structured
+ * HTML. Handles 8-K cover pages, 10-Q/10-K text renditions, and XBRL-prefixed
+ * documents (the header blob of CIK/member lines before the human-readable part).
+ *
+ * Strategy:
+ *  1. Strip the machine-readable XBRL header block (lines before "UNITED STATES").
+ *  2. Detect and tag section titles (ALL CAPS lines, "Item N.NN …", form headings).
+ *  3. Detect two-column key/value pairs and render them as a definition list.
+ *  4. Detect exhibit tables (lines like "99.1  Press release …").
+ *  5. Detect signature blocks.
+ *  6. Wrap everything else as paragraphs (collapsing blank-line groups).
+ */
+function secTextToHtml(raw: string): string {
+  // ── 1. Strip XBRL header blob ──────────────────────────────────────────
+  // The blob looks like:
+  //   aapl-20260730 bazadebezol…
+  //   false 0000320193 …
+  //   0000320193 us-gaap:CommonStockMember …
+  // Stop stripping when we hit "UNITED STATES" or the main form heading.
+  const HUMAN_START = /^(UNITED STATES|FORM\s+\d|SECURITIES AND EXCHANGE|Item\s+\d)/im;
+  const startIdx = HUMAN_START.exec(raw)?.index ?? 0;
+  const text = raw.slice(startIdx).trim();
+
+  // ── 2. Tokenise into lines ─────────────────────────────────────────────
+  const lines = text.split(/\r?\n/);
+
+  // ── 3. Classify and render each line ──────────────────────────────────
+  const parts: string[] = [];
+  let i = 0;
+
+  // helpers
+  const esc = escapeHtml;
+
+  // Patterns
+  const BLANK = /^\s*$/;
+  const FORM_TITLE = /^(UNITED STATES|SECURITIES AND EXCHANGE COMMISSION|FORM\s+\d+[-\w]*|CURRENT REPORT|ANNUAL REPORT|QUARTERLY REPORT)/i;
+  const SECTION_CAPS = /^[A-Z][A-Z\s\d,.\-–—:()&/]{8,}$/; // all-caps heading
+  const ITEM_HEADING = /^(Item\s+\d+[\d.]*\s+\S.{4,})/i;
+  const SEC_HEADING  = /^(SIGNATURE|EXHIBIT INDEX|FINANCIAL STATEMENTS|PART\s+[IVX]+\b)/i;
+  const KV_LINE      = /^([A-Za-z][A-Za-z\s()./,#-]{2,40})\s{2,}(.+)$/;
+  const EXHIBIT_LINE = /^(\d{2,3}(?:\.\d+)?)\s{2,}(.+)$/;
+  const DASHES       = /^[-─═*]{10,}$/;
+  const BY_LINE      = /^By:\s*\/s\//i;
+  const SIGNATURE_BLOCK = /^\s*\/s\//i;
+
+  // Track whether we are inside a <ul> exhibit list or <dl> kv block
+  let inList: "ul" | "dl" | null = null;
+
+  function closeList() {
+    if (inList === "ul") { parts.push("</ul>"); inList = null; }
+    if (inList === "dl") { parts.push("</dl>"); inList = null; }
+  }
+
+  while (i < lines.length) {
+    const line = lines[i].trimEnd();
+
+    // blank line — close any open list, emit a paragraph break
+    if (BLANK.test(line)) {
+      closeList();
+      i++;
+      continue;
+    }
+
+    // horizontal rules / decorative dashes — skip
+    if (DASHES.test(line.trim())) { i++; continue; }
+
+    const trimmed = line.trim();
+
+    // Form-level title (centered uppercase banner lines)
+    if (FORM_TITLE.test(trimmed)) {
+      closeList();
+      parts.push(`<h1 class="form-title">${esc(trimmed)}</h1>`);
+      i++;
+      continue;
+    }
+
+    // SEC section headings (SIGNATURE, PART I, EXHIBIT INDEX …)
+    if (SEC_HEADING.test(trimmed)) {
+      closeList();
+      parts.push(`<h2 class="sec-section">${esc(trimmed)}</h2>`);
+      i++;
+      continue;
+    }
+
+    // Item N.NN headings
+    if (ITEM_HEADING.test(trimmed)) {
+      closeList();
+      parts.push(`<h3 class="item-heading">${esc(trimmed)}</h3>`);
+      i++;
+      continue;
+    }
+
+    // All-caps headings (company name banner, "CHECK THE APPROPRIATE BOX", etc.)
+    if (SECTION_CAPS.test(trimmed) && trimmed.length < 120) {
+      closeList();
+      // Very short all-caps that look like company names → h2; otherwise h3
+      const tag = trimmed.length < 50 ? "h2" : "h3";
+      parts.push(`<${tag} class="caps-heading">${esc(trimmed)}</${tag}>`);
+      i++;
+      continue;
+    }
+
+    // Exhibit table rows: "99.1   Press release issued by Apple…"
+    const exhibitMatch = EXHIBIT_LINE.exec(trimmed);
+    if (exhibitMatch && !KV_LINE.test(trimmed)) {
+      if (inList !== "ul") {
+        closeList();
+        parts.push('<ul class="exhibit-list">');
+        inList = "ul";
+      }
+      parts.push(`<li><span class="exhibit-num">${esc(exhibitMatch[1])}</span> ${esc(exhibitMatch[2])}</li>`);
+      i++;
+      continue;
+    }
+
+    // Key–value pairs: "Commission File Number    001-36743"
+    const kvMatch = KV_LINE.exec(trimmed);
+    if (kvMatch && trimmed.length < 200) {
+      if (inList !== "dl") {
+        closeList();
+        parts.push('<dl class="kv-block">');
+        inList = "dl";
+      }
+      parts.push(`<div class="kv-row"><dt>${esc(kvMatch[1].trim())}</dt><dd>${esc(kvMatch[2].trim())}</dd></div>`);
+      i++;
+      continue;
+    }
+
+    // Signature lines
+    if (BY_LINE.test(trimmed) || SIGNATURE_BLOCK.test(trimmed)) {
+      closeList();
+      parts.push(`<p class="sig-line">${esc(trimmed)}</p>`);
+      i++;
+      continue;
+    }
+
+    // ── Paragraph accumulation ─────────────────────────────────────────
+    // Collect consecutive non-blank, non-heading lines into one <p>.
+    closeList();
+    const paraLines: string[] = [];
+    while (
+      i < lines.length &&
+      !BLANK.test(lines[i]) &&
+      !FORM_TITLE.test(lines[i].trim()) &&
+      !SEC_HEADING.test(lines[i].trim()) &&
+      !ITEM_HEADING.test(lines[i].trim()) &&
+      !DASHES.test(lines[i].trim())
+    ) {
+      paraLines.push(lines[i].trimEnd());
+      i++;
+    }
+    if (paraLines.length) {
+      const content = paraLines.map((l) => esc(l.trim())).join(" ");
+      parts.push(`<p>${content}</p>`);
+    }
+  }
+
+  closeList();
+  return parts.join("\n");
+}
+
 function buildHtmlDoc(body: string): string {
   return `<!doctype html><html><head><meta charset="utf-8" />
     <style>
-      body { font-family: Georgia, 'Times New Roman', serif; margin: 0; padding: 20px; background: #f7f8fa; color: #14171f; font-size: 13px; line-height: 1.6; }
-      table { border-collapse: collapse; max-width: 100%; }
-      td, th { border: 1px solid #d7dde6; padding: 6px 9px; }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        margin: 0; padding: 24px 28px; background: #f8f9fb; color: #1a1d25;
+        font-size: 13px; line-height: 1.65;
+      }
+
+      /* ── Typography ── */
+      h1.form-title {
+        text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .04em;
+        text-transform: uppercase; color: #0f1117; margin: 20px 0 8px;
+        border-bottom: 2px solid #0057e7; padding-bottom: 6px;
+      }
+      h2.sec-section {
+        font-size: 13px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .06em; color: #0057e7; margin: 22px 0 6px;
+        border-left: 3px solid #0057e7; padding-left: 8px;
+      }
+      h2.caps-heading {
+        font-size: 13px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .05em; color: #0f1117; margin: 18px 0 5px;
+      }
+      h3.item-heading {
+        font-size: 13px; font-weight: 600; color: #14171f; margin: 18px 0 5px;
+        padding: 6px 10px; background: #edf1fb; border-radius: 4px;
+      }
+      h3.caps-heading {
+        font-size: 12px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .04em; color: #555c70; margin: 14px 0 4px;
+      }
+      p { margin: 0 0 8px; color: #2b3040; }
+
+      /* ── Key-value pairs (company details, address, identifiers) ── */
+      dl.kv-block { margin: 10px 0 14px; display: grid; gap: 0; }
+      .kv-row {
+        display: grid; grid-template-columns: minmax(160px, 260px) 1fr;
+        gap: 0 16px; padding: 4px 8px; border-bottom: 1px solid #e4e7ef;
+      }
+      .kv-row:first-child { border-top: 1px solid #e4e7ef; }
+      dt { font-weight: 600; color: #555c70; font-size: 11.5px; }
+      dd { margin: 0; font-family: "SF Mono", "Consolas", monospace; font-size: 11.5px; color: #1a1d25; }
+
+      /* ── Exhibit list ── */
+      ul.exhibit-list { list-style: none; margin: 8px 0 14px; padding: 0; }
+      ul.exhibit-list li {
+        padding: 5px 10px; border-bottom: 1px solid #e4e7ef;
+        font-size: 12px; color: #2b3040;
+      }
+      ul.exhibit-list li:first-child { border-top: 1px solid #e4e7ef; }
+      .exhibit-num {
+        display: inline-block; min-width: 44px;
+        font-family: "SF Mono", "Consolas", monospace;
+        font-size: 11px; font-weight: 600; color: #0057e7; margin-right: 10px;
+      }
+
+      /* ── Signature lines ── */
+      p.sig-line { font-style: italic; color: #555c70; font-size: 12px; margin: 4px 0; }
+
+      /* ── Tables (fallback for any inline tables in HTML filings) ── */
+      table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }
+      td, th {
+        border: 1px solid #d0d5e3; padding: 5px 10px; vertical-align: top; text-align: left;
+      }
+      th { background: #edf1fb; font-weight: 600; }
+      tr:nth-child(even) td { background: #f4f5f9; }
+
+      /* ── Images ── */
       img { max-width: 100%; height: auto; }
+
+      /* ── AI highlights ── */
       mark.sp-hl {
         color: #14171f; padding: 0 2px; border-radius: 2px; background: #ffe14d;
         animation: sp-hl-in 0.35s ease both;
