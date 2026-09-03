@@ -647,7 +647,7 @@ export const webMcpTools: WebMcpTool[] = [
     name: "rank_stocks",
     category: "Market Data",
     description:
-      "Rank the curated stock universe by a supported metric (performance, volume, price).",
+      "Rank the curated stock universe by a supported metric (performance, volume, price). Navigates to the Markets page and highlights the sorted directory.",
     inputSchema: {
       type: "object",
       properties: {
@@ -668,6 +668,12 @@ export const webMcpTools: WebMcpTool[] = [
       const quotes = await getMultipleQuotes(
         STOCK_UNIVERSE.map((s) => s.symbol),
       );
+
+      // Map metric to a sort key used by the markets page
+      type SortKey = "change" | "price" | "symbol" | "beta" | "dayRange";
+      const sortKey: SortKey =
+        metric === "price" ? "price" : metric === "volume" ? "change" : "change";
+
       const ranked = quotes
         .map((q) => ({
           symbol: q.symbol,
@@ -683,8 +689,46 @@ export const webMcpTools: WebMcpTool[] = [
         }))
         .sort((a, b) => Number(b.metricValue) - Number(a.metricValue))
         .slice(0, limit);
+
+      if (typeof window !== "undefined") {
+        const dispatchEvent = () =>
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:markets:filter", {
+              detail: {
+                sort: { key: sortKey, dir: "desc" },
+                scrollTo: "directory",
+              },
+            }),
+          );
+
+        if (window.location.pathname !== "/markets") {
+          // Store the pending action so the page picks it up after navigation
+          sessionStorage.setItem(
+            "stockpilot:pending-markets-filter",
+            JSON.stringify({ sort: { key: sortKey, dir: "desc" }, scrollTo: "directory" }),
+          );
+          window.location.href = "/markets";
+        } else {
+          dispatchEvent();
+        }
+      }
+
       return {
-        content: [{ type: "text", text: JSON.stringify(ranked, null, 2) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ranked,
+                metric,
+                sortApplied: sortKey,
+                message: `Showing top ${ranked.length} stocks ranked by ${metric}. The Markets page directory is now sorted by ${metric}.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   },
@@ -693,7 +737,7 @@ export const webMcpTools: WebMcpTool[] = [
     name: "screen_stocks",
     category: "Market Data",
     description:
-      "Screen stocks from the universe by price range, percent change, or sector.",
+      "Screen stocks from the universe by price range, percent change, beta, or sector. Navigates to the Markets page, applies the filters in the directory, and scrolls to it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -707,6 +751,8 @@ export const webMcpTools: WebMcpTool[] = [
           type: "number",
           description: "Maximum daily % change",
         },
+        minBeta: { type: "number", description: "Minimum beta value" },
+        maxBeta: { type: "number", description: "Maximum beta value" },
         sector: {
           type: "string",
           description: "Sector filter e.g. Technology, Healthcare, Energy",
@@ -728,8 +774,15 @@ export const webMcpTools: WebMcpTool[] = [
         params.maxPercentChange != null
           ? Number(params.maxPercentChange)
           : null;
+      const minBeta = params.minBeta != null ? Number(params.minBeta) : null;
+      const maxBeta = params.maxBeta != null ? Number(params.maxBeta) : null;
       const sector = params.sector ? String(params.sector).toLowerCase() : null;
       const limit = Number(params.limit ?? 10);
+
+      const BETA_MAP: Record<string, number> = {
+        AAPL: 0.84, MSFT: 0.81, AMD: 1.56, CSCO: 0.59, QCOM: 1.05,
+        AMZN: 0.96, TSLA: 1.5, SBUX: 0.64, META: 1.04, NFLX: 1.0,
+      };
 
       const quotes = await getMultipleQuotes(
         STOCK_UNIVERSE.map((s) => s.symbol),
@@ -754,14 +807,80 @@ export const webMcpTools: WebMcpTool[] = [
         results = results.filter((r) => r.percentChange >= minPct);
       if (maxPct !== null)
         results = results.filter((r) => r.percentChange <= maxPct);
+      if (minBeta !== null)
+        results = results.filter((r) => (BETA_MAP[r.symbol] ?? 1) >= minBeta);
+      if (maxBeta !== null)
+        results = results.filter((r) => (BETA_MAP[r.symbol] ?? 1) <= maxBeta);
       if (sector)
         results = results.filter((r) =>
           r.sector?.toLowerCase().includes(sector),
         );
 
       results = results.sort((a, b) => b.score - a.score).slice(0, limit);
+
+      // ── Navigate to Markets page and apply filters in the directory UI ──
+      if (typeof window !== "undefined") {
+        // Match sector string to exact display value
+        const SECTOR_LABELS: Record<string, string> = {
+          technology: "Technology",
+          "consumer cyclical": "Consumer Cyclical",
+          "communication services": "Communication Services",
+        };
+        const sectorLabel = sector
+          ? (SECTOR_LABELS[sector] ?? STOCK_UNIVERSE.find((s) =>
+              s.sector.toLowerCase().includes(sector),
+            )?.sector ?? "All")
+          : "All";
+
+        const filterDetail = {
+          filters: {
+            minPrice: minPrice != null ? String(minPrice) : "",
+            maxPrice: maxPrice != null ? String(maxPrice) : "",
+            minChange: minPct != null ? String(minPct) : "",
+            maxChange: maxPct != null ? String(maxPct) : "",
+            minBeta: minBeta != null ? String(minBeta) : "",
+            maxBeta: maxBeta != null ? String(maxBeta) : "",
+          },
+          sector: sectorLabel,
+          scrollTo: "directory" as const,
+        };
+
+        if (window.location.pathname !== "/markets") {
+          sessionStorage.setItem(
+            "stockpilot:pending-markets-filter",
+            JSON.stringify(filterDetail),
+          );
+          window.location.href = "/markets";
+        } else {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:markets:filter", { detail: filterDetail }),
+          );
+        }
+      }
+
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                results,
+                filtersApplied: {
+                  minPrice,
+                  maxPrice,
+                  minPercentChange: minPct,
+                  maxPercentChange: maxPct,
+                  minBeta,
+                  maxBeta,
+                  sector,
+                },
+                message: `Found ${results.length} matching stocks. The Markets page directory is now filtered and visible.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   },
@@ -770,7 +889,7 @@ export const webMcpTools: WebMcpTool[] = [
     name: "get_sector_performance",
     category: "Market Data",
     description:
-      "Return a breakdown of average performance by market sector from the tracked universe.",
+      "Return a breakdown of average performance by market sector from the tracked universe. Navigates to the Markets page and scrolls to the Sector Performance section.",
     inputSchema: { type: "object", properties: {} },
     async execute() {
       const quotes = await getMultipleQuotes(
@@ -796,8 +915,37 @@ export const webMcpTools: WebMcpTool[] = [
               : "negative",
         }))
         .sort((a, b) => b.avgChange - a.avgChange);
+
+      // ── Navigate to /markets and scroll to the sector performance section ──
+      if (typeof window !== "undefined") {
+        const scrollDetail = { scrollTo: "sector-performance" as const };
+        if (window.location.pathname !== "/markets") {
+          sessionStorage.setItem(
+            "stockpilot:pending-markets-filter",
+            JSON.stringify(scrollDetail),
+          );
+          window.location.href = "/markets";
+        } else {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:markets:filter", { detail: scrollDetail }),
+          );
+        }
+      }
+
       return {
-        content: [{ type: "text", text: JSON.stringify(sectors, null, 2) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                sectors,
+                message: "Navigated to the Markets page — Sector Performance section is now visible.",
+              },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   },
