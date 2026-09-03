@@ -20,7 +20,7 @@ const navGroups = [
   {
     label: "Trade",
     items: [
-      { label: "Overview", href: "/", icon: LayoutGrid },
+      { label: "Overview", href: "/dashboard", icon: LayoutGrid },
       { label: "Markets", href: "/markets", icon: BarChart3 },
       { label: "Watchlist", href: "/watchlist", icon: Bookmark },
       { label: "Portfolio", href: "/portfolio", icon: Wallet },
@@ -49,7 +49,7 @@ export function SiteHeader() {
 
   return (
     <aside className="w-56 shrink-0 border-r border-hairline bg-panel p-4 min-h-screen">
-      <Link href="/" className="flex items-center gap-2.5 px-2 py-2">
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-2 py-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-[color:var(--on-accent)]">
           <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
             <path d="M12 2L2 12l10 10 10-10L12 2zm0 4.5l6.5 6.5-6.5 6.5-6.5-6.5L12 6.5z" />

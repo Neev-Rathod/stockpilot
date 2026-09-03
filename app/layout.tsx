@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
-import { SiteHeader } from "@/components/layout/site-header";
-import { SiteTopBar } from "@/components/layout/site-top-bar";
-import { TutorialButton } from "@/components/tour-button";
+import { AppShell } from "@/components/layout/app-shell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,9 +15,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StockPilot — Professional Trading & Market Intelligence",
+  title: "StockPilot — Trade with an AI agent",
   description:
-    "Real-time market analytics, stock performance comparison, and virtual trading simulation.",
+    "A WebMCP-powered trading terminal where humans and AI agents research markets, analyze SEC filings, and trade together — on real data.",
 };
 
 export default function RootLayout({
@@ -30,21 +28,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full bg-[#090a0d] text-white antialiased selection:bg-blue-600 selection:text-white">
+      <body className="min-h-full bg-app text-txt antialiased">
         <Providers>
-          <div className="flex min-h-screen">
-            {/* Left Narrow Sidebar */}
-            <SiteHeader />
-            
-            {/* Main Workspace Area */}
-            <div className="flex flex-1 flex-col overflow-x-hidden">
-              <SiteTopBar />
-              
-              <main className="flex-1 bg-[#090a0d] p-6 sm:p-8">
-                {children}
-              </main>
-            </div>
-          </div>
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

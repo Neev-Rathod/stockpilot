@@ -70,6 +70,44 @@ export function riskScore({ volatility, drawdown, bullishRatio }: RiskInputs): R
   };
 }
 
+function rate(score: number): RiskResult["rating"] {
+  return score < 34 ? "Low" : score < 67 ? "Moderate" : "High";
+}
+
+// Signals aggregated across the latest N filings.
+export interface FilingSignals {
+  filingsAnalyzed: number;
+  buyTxns: number; // insider acquire/purchase transactions (Form 4)
+  sellTxns: number; // insider sell/dispose transactions (Form 4)
+  materialEvents: number; // count of 8-K filings
+  form4Count: number;
+}
+
+// Filing-derived risk, 0-100 (higher = riskier), neutral 50 baseline.
+export function filingRiskScore(s: FilingSignals): number {
+  let score = 50;
+  const insiderTotal = s.buyTxns + s.sellTxns;
+  if (insiderTotal > 0) {
+    const sellBias = (s.sellTxns - s.buyTxns) / insiderTotal; // -1..1
+    score += sellBias * 22; // net insider selling nudges risk up
+  }
+  score += Math.min(s.materialEvents, 4) * 3; // more 8-K events = more uncertainty
+  return Math.round(clamp(score, 0, 100));
+}
+
+// Blend the price-based score with the filing-based score (when we have filings).
+export function compositeRisk(
+  priceScore: number,
+  signals: FilingSignals | null,
+): { score: number; rating: RiskResult["rating"]; filingScore: number | null } {
+  if (!signals || signals.filingsAnalyzed === 0) {
+    return { score: Math.round(priceScore), rating: rate(priceScore), filingScore: null };
+  }
+  const filingScore = filingRiskScore(signals);
+  const score = Math.round(clamp(priceScore * 0.6 + filingScore * 0.4, 0, 100));
+  return { score, rating: rate(score), filingScore };
+}
+
 export interface FilingAnalysis {
   symbol: string;
   score: number;
@@ -80,6 +118,8 @@ export interface FilingAnalysis {
   marketCap: number | null; // millions USD
   industry: string | null;
   recommendation: { strongBuy: number; buy: number; hold: number; sell: number; strongSell: number } | null;
+  filings?: FilingSignals | null;
+  filingScore?: number | null;
 }
 
 // Markdown returned to the agent (the tool result).
@@ -89,13 +129,19 @@ export function formatAnalysisMarkdown(a: FilingAnalysis, highlight: string[]): 
   const total = rec ? rec.strongBuy + rec.buy + rec.hold + rec.sell + rec.strongSell : 0;
   const bullPct = rec && total ? Math.round(((rec.strongBuy + rec.buy) / total) * 100) : null;
 
+  const f = a.filings;
+  const filingsLine = f && f.filingsAnalyzed > 0
+    ? `- Filings analyzed: ${f.filingsAnalyzed} (insider buys ${f.buyTxns}, sells ${f.sellTxns}; ${f.materialEvents} 8-K event${f.materialEvents === 1 ? "" : "s"}) — filing risk ${a.filingScore}/100`
+    : `- Filings analyzed: none available`;
+
   return [
     `# ${a.symbol} — Risk & Fundamental Snapshot`,
     ``,
-    `**Risk score: ${a.score}/100 (${a.rating})**`,
+    `**Composite risk score: ${a.score}/100 (${a.rating})** — blends price risk with the latest filings`,
     `- Annualized volatility: ${a.volatility}%`,
     `- Max drawdown: ${a.maxDrawdown}%`,
     `- Analyst sentiment: ${bullPct != null ? `${bullPct}% bullish (${total} analysts)` : "n/a"}`,
+    filingsLine,
     ``,
     `#### 1. Fundamentals (the "numbers")`,
     `- Market cap: ${capB}${a.industry ? ` · Industry: ${a.industry}` : ""}`,

@@ -1,5 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { dailyReturns, annualizedVolatility, maxDrawdown, riskScore } from "./sec-analysis";
+import {
+  dailyReturns,
+  annualizedVolatility,
+  maxDrawdown,
+  riskScore,
+  filingRiskScore,
+  compositeRisk,
+} from "./sec-analysis";
+
+describe("filingRiskScore", () => {
+  it("is higher when insiders are net sellers than net buyers", () => {
+    const selling = filingRiskScore({ filingsAnalyzed: 5, buyTxns: 0, sellTxns: 6, materialEvents: 0, form4Count: 5 });
+    const buying = filingRiskScore({ filingsAnalyzed: 5, buyTxns: 6, sellTxns: 0, materialEvents: 0, form4Count: 5 });
+    expect(selling).toBeGreaterThan(buying);
+    expect(selling).toBeLessThanOrEqual(100);
+    expect(buying).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("compositeRisk", () => {
+  it("returns the price score unchanged when there are no filings", () => {
+    const r = compositeRisk(40, null);
+    expect(r.score).toBe(40);
+    expect(r.filingScore).toBeNull();
+  });
+  it("blends price and filing scores and stays within 0-100", () => {
+    const r = compositeRisk(40, { filingsAnalyzed: 5, buyTxns: 0, sellTxns: 8, materialEvents: 2, form4Count: 5 });
+    expect(r.filingScore).not.toBeNull();
+    expect(r.score).toBeGreaterThanOrEqual(0);
+    expect(r.score).toBeLessThanOrEqual(100);
+  });
+});
 
 describe("dailyReturns", () => {
   it("computes period-over-period returns", () => {

@@ -14,7 +14,9 @@ import {
   annualizedVolatility,
   maxDrawdown,
   riskScore as computeRiskScore,
+  compositeRisk,
   type FilingAnalysis,
+  type FilingSignals,
 } from "@/lib/sec-analysis";
 import { pearson, pivotLevels, localSwings, runBacktest } from "@/lib/ta";
 import {
@@ -399,10 +401,65 @@ export const webMcpTools: WebMcpTool[] = [
         const volatility = annualizedVolatility(closes);
         const drawdown = maxDrawdown(closes);
         const risk = computeRiskScore({ volatility, drawdown, bullishRatio });
+
+        // ── Signals across the latest 10 filings ──────────────────────────
+        const latest10 = filings.slice(0, 10);
+        const materialEvents = latest10.filter((f) =>
+          (f.form ?? "").toUpperCase().includes("8-K"),
+        ).length;
+        const form4s = latest10.filter((f) => (f.form ?? "").includes("4"));
+        let buyTxns = 0;
+        let sellTxns = 0;
+        if (typeof window !== "undefined" && form4s.length) {
+          const buyCodes = new Set(["P", "A"]);
+          const sellCodes = new Set(["S", "D", "F"]);
+          const reports = await Promise.all(
+            form4s.map(async (f) => {
+              const u = f.reportUrl ?? f.filingUrl;
+              if (!u) return "";
+              try {
+                const res = await fetch(`/api/sec/report?url=${encodeURIComponent(u)}`);
+                const json = (await res.json()) as { rawText?: string };
+                return typeof json.rawText === "string" ? json.rawText : "";
+              } catch {
+                return "";
+              }
+            }),
+          );
+          for (const xml of reports) {
+            if (!xml) continue;
+            try {
+              const doc = new DOMParser().parseFromString(xml, "application/xml");
+              doc
+                .querySelectorAll("nonDerivativeTransaction, derivativeTransaction")
+                .forEach((t) => {
+                  const code = (
+                    t.querySelector("transactionCoding transactionCode") ||
+                    t.querySelector("transactionCode")
+                  )?.textContent
+                    ?.trim()
+                    .toUpperCase();
+                  if (code && buyCodes.has(code)) buyTxns++;
+                  else if (code && sellCodes.has(code)) sellTxns++;
+                });
+            } catch {
+              // ignore unparseable filings
+            }
+          }
+        }
+        const filingSignals: FilingSignals = {
+          filingsAnalyzed: latest10.length,
+          buyTxns,
+          sellTxns,
+          materialEvents,
+          form4Count: form4s.length,
+        };
+        const composite = compositeRisk(risk.score, filingSignals);
+
         riskAnalysis = {
           symbol,
-          score: risk.score,
-          rating: risk.rating,
+          score: composite.score,
+          rating: composite.rating,
           volatility: +volatility.toFixed(1),
           maxDrawdown: +drawdown.toFixed(1),
           components: risk.components,
@@ -417,6 +474,8 @@ export const webMcpTools: WebMcpTool[] = [
                 strongSell: latestRec.strongSell,
               }
             : null,
+          filings: filingSignals,
+          filingScore: composite.filingScore,
         };
         if (typeof window !== "undefined") {
           window.dispatchEvent(
@@ -452,6 +511,11 @@ export const webMcpTools: WebMcpTool[] = [
                 symbol,
                 windowDays: days,
                 filingsConsidered: filings.slice(0, Math.max(1, limit)).length,
+                latestFilings: filings.slice(0, 10).map((f) => ({
+                  form: f.form ?? null,
+                  filedDate: f.filedDate ?? null,
+                  accessNumber: f.accessNumber ?? null,
+                })),
                 selected: selectedFiling,
                 riskAnalysis,
                 chosenReason: `Selected the highest-ranked material filing by form size and recency.`,
@@ -2932,9 +2996,10 @@ export const webMcpTools: WebMcpTool[] = [
 
 // ─── Registration ──────────────────────────────────────────────────────────────
 // Track which tools have already been registered so repeated calls (React
-// mounts, retries, the panel button) don't re-register and trigger the
-// WebMCP runtime's "duplicate tool name" error.
-const registeredToolNames = new Set<string>();
+// mounts, retries, the panel button, dev HMR) don't re-register and trigger the
+// WebMCP runtime's "duplicate tool name" error. The dedup set lives on `window`
+// so it survives Fast-Refresh module reloads (a module-level set would not).
+const REGISTERED_KEY = "__stockpilotRegisteredTools";
 
 export async function registerWebMcpTools() {
   if (typeof window === "undefined" || typeof document === "undefined") {
@@ -2953,14 +3018,19 @@ export async function registerWebMcpTools() {
     return webMcpTools;
   }
 
+  const w = window as unknown as Record<string, Set<string>>;
+  const registered = (w[REGISTERED_KEY] ??= new Set<string>());
+
   let registeredCount = 0;
   for (const tool of webMcpTools) {
-    if (registeredToolNames.has(tool.name)) continue;
+    if (registered.has(tool.name)) continue;
+    // Claim the name BEFORE awaiting so concurrent callers can't double-register.
+    registered.add(tool.name);
     try {
       await mcp.registerTool(tool);
-      registeredToolNames.add(tool.name);
       registeredCount++;
     } catch (error) {
+      registered.delete(tool.name); // genuine failure — allow a later retry
       console.error(`❌ Failed to register WebMCP tool '${tool.name}':`, error);
     }
   }

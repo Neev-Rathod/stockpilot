@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { TrendingUp, Loader2 } from "lucide-react";
 import { getSupabaseBrowser, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/kit";
+import { AmbientBackground } from "@/components/ui/ambient-background";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
@@ -45,7 +46,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         if (error) throw error;
         toast.success("Welcome back!");
       }
-      const redirect = new URLSearchParams(window.location.search).get("redirect") || "/";
+      const redirect = new URLSearchParams(window.location.search).get("redirect") || "/dashboard";
       router.push(redirect);
       router.refresh();
     } catch (err) {
@@ -56,8 +57,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-hairline bg-panel p-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+      <AmbientBackground />
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border border-hairline bg-panel p-8">
         <div className="mb-6 flex items-center gap-2.5">
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent text-[color:var(--on-accent)]">
             <TrendingUp className="h-4.5 w-4.5" />

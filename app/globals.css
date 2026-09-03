@@ -124,11 +124,76 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-/* SEC report highlight marker (yellow) */
+/* SEC report highlight marker (yellow) — animates in with a staggered delay */
 mark.sp-hl,
 .sp-report .sp-hl {
   background: #ffe14d;
   color: #14171f;
   padding: 0 2px;
   border-radius: 2px;
+  animation: sp-hl-in 0.35s ease both;
+  animation-delay: calc(var(--i, 0) * 0.06s);
+}
+
+@keyframes sp-hl-in {
+  from { background: transparent; }
+  to { background: #ffe14d; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  mark.sp-hl,
+  .sp-report .sp-hl {
+    animation: none;
+  }
+}
+
+/* ── Ambient animated backdrop (landing + auth) ─────────────────────────── */
+.ambient-aurora {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  will-change: transform;
+}
+.ambient-aurora-1 {
+  top: -20%;
+  left: 8%;
+  width: 60vw;
+  height: 60vw;
+  max-width: 720px;
+  max-height: 720px;
+  background: radial-gradient(closest-side, rgba(245, 183, 10, 0.22), transparent);
+  animation: ambient-drift-1 26s ease-in-out infinite;
+}
+.ambient-aurora-2 {
+  bottom: -25%;
+  right: 4%;
+  width: 55vw;
+  height: 55vw;
+  max-width: 680px;
+  max-height: 680px;
+  background: radial-gradient(closest-side, rgba(245, 183, 10, 0.13), transparent);
+  animation: ambient-drift-2 32s ease-in-out infinite;
+}
+.ambient-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse at center, black 40%, transparent 78%);
+  mask-image: radial-gradient(ellipse at center, black 40%, transparent 78%);
+}
+@keyframes ambient-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(6%, 8%) scale(1.12); }
+}
+@keyframes ambient-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-8%, -6%) scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient-aurora {
+    animation: none;
+  }
 }

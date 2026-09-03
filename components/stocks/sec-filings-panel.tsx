@@ -258,6 +258,18 @@ function RiskScorecard({ analysis }: { analysis: FilingAnalysis }) {
         <Fact label="Industry" value={analysis.industry ?? "—"} />
         <Fact label="Analysts" value={totalRec ? String(totalRec) : "—"} />
       </div>
+      {analysis.filings && analysis.filings.filingsAnalyzed > 0 && (
+        <div className="mt-3 border-t border-hairline pt-3 text-[11px] text-txt-dim">
+          <span className="font-semibold text-txt">Across {analysis.filings.filingsAnalyzed} recent filings:</span>{" "}
+          insider buys {analysis.filings.buyTxns} · sells {analysis.filings.sellTxns} ·{" "}
+          {analysis.filings.materialEvents} 8-K event{analysis.filings.materialEvents === 1 ? "" : "s"}
+          {analysis.filingScore != null && (
+            <>
+              {" "}· filing risk <span className="font-mono text-txt">{analysis.filingScore}/100</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -403,21 +415,30 @@ function buildHighlightRegex(terms: string[]): RegExp | null {
   return new RegExp(`(${custom.join("|")})`, "gi");
 }
 
-const MARK_OPEN = '<mark class="sp-hl">';
-const MARK_CLOSE = "</mark>";
+// Wrap each match in a <mark> carrying a staggered index (--i) so highlights
+// animate in sequentially (see the sp-hl keyframes). Capped so it never drags.
+const MAX_STAGGER = 40;
+function markMatches(text: string, regex: RegExp, counter: { n: number }): string {
+  return text.replace(regex, (m) => {
+    const i = Math.min(counter.n++, MAX_STAGGER);
+    return `<mark class="sp-hl" style="--i:${i}">${m}</mark>`;
+  });
+}
 
 // Tag-aware: only highlight text between tags, never inside them.
 function highlightHtml(html: string, regex: RegExp | null): string {
   if (!regex) return html;
+  const counter = { n: 0 };
   return html
     .split(/(<[^>]+>)/g)
-    .map((token) => (token.startsWith("<") ? token : token.replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`)))
+    .map((token) => (token.startsWith("<") ? token : markMatches(token, regex, counter)))
     .join("");
 }
 
 function highlightText(raw: string, regex: RegExp | null): string {
   const escaped = escapeHtml(raw);
-  return regex ? escaped.replace(regex, `${MARK_OPEN}$&${MARK_CLOSE}`) : escaped;
+  if (!regex) return escaped;
+  return markMatches(escaped, regex, { n: 0 });
 }
 
 function sanitizeHtml(html: string): string {
@@ -437,7 +458,17 @@ function buildHtmlDoc(body: string): string {
       table { border-collapse: collapse; max-width: 100%; }
       td, th { border: 1px solid #d7dde6; padding: 6px 9px; }
       img { max-width: 100%; height: auto; }
-      mark.sp-hl { background: #ffe14d; color: #14171f; padding: 0 2px; border-radius: 2px; }
+      mark.sp-hl {
+        color: #14171f; padding: 0 2px; border-radius: 2px; background: #ffe14d;
+        animation: sp-hl-in 0.35s ease both;
+        animation-delay: calc(var(--i, 0) * 0.06s);
+      }
+      @keyframes sp-hl-in {
+        from { background: transparent; box-shadow: 0 0 0 rgba(245,183,10,0); }
+        50%  { box-shadow: 0 0 8px rgba(245,183,10,0.7); }
+        to   { background: #ffe14d; box-shadow: 0 0 0 rgba(245,183,10,0); }
+      }
+      @media (prefers-reduced-motion: reduce) { mark.sp-hl { animation: none; } }
     </style></head><body>${body}</body></html>`;
 }
 
