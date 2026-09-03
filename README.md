@@ -13,6 +13,7 @@ All trading is **simulated** with a virtual $100,000 balance — no real money o
 - [Features](#features)
 - [Tech stack](#tech-stack)
 - [Running it on any laptop](#running-it-on-any-laptop)
+- [Deploying to Vercel with GitHub Actions](#deploying-to-vercel-with-github-actions)
 - [Enabling WebMCP in the browser](#enabling-webmcp-in-the-browser)
 - [WebMCP tool reference](#webmcp-tool-reference)
 - [Project structure](#project-structure)
@@ -121,6 +122,35 @@ npm start
 | `npm start` | Serve the production build |
 | `npm run lint` | Run ESLint |
 | `npm test` | Run unit tests (Vitest) |
+
+## Deploying to Vercel with GitHub Actions
+
+The workflow in [`.github/workflows/vercel.yml`](.github/workflows/vercel.yml) deploys automatically:
+
+- pushes to `main` or `master` create production deployments;
+- pull requests targeting `main` or `master` create preview deployments.
+
+### 1. Create the Vercel project
+
+Import this GitHub repository in [Vercel](https://vercel.com/new), keep the framework preset as **Next.js**, and do not commit the generated `.vercel` directory.
+
+### 2. Add GitHub Actions secrets
+
+In the GitHub repository, open **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Value |
+|---|---|
+| `VERCEL_TOKEN` | A token created in Vercel → Account Settings → Tokens |
+| `VERCEL_ORG_ID` | The `orgId` from the Vercel project `.vercel/project.json` or Vercel project settings |
+| `VERCEL_PROJECT_ID` | The `projectId` from the same file or Vercel project settings |
+
+To obtain both IDs locally after linking the project, run `npx vercel link`, then inspect `.vercel/project.json`. The workflow creates its own temporary Vercel metadata during CI; `.vercel` remains ignored by Git.
+
+### 3. Add Vercel environment variables
+
+In **Vercel → Project → Settings → Environment Variables**, add the same application variables used locally: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `FINNHUB_API_KEY` if news data is enabled. Keep `SUPABASE_SERVICE_ROLE_KEY` out of the browser and only add it to Vercel if a server-side deployment path explicitly needs it.
+
+After the secrets are present, merge or push to `main`/`master` to run the production deployment. GitHub Actions will show the Vercel CLI output and deployment URL in the workflow log.
 
 ---
 

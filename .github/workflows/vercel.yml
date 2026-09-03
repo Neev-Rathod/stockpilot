@@ -1,0 +1,64 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=${{ github.event_name == 'push' && 'production' || 'preview' }} --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel deployment
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            vercel build --prod --token="$VERCEL_TOKEN"
+          else
+            vercel build --token="$VERCEL_TOKEN"
+          fi
+
+      - name: Deploy to Vercel
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+          else
+            vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+          fi
