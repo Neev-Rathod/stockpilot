@@ -75,6 +75,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { OhlcvCandle, OhlcvSeries } from "@/lib/ohlcv";
+import { aggregateCandles, type CandleInterval } from "@/lib/ohlcv-aggregate";
 
 /* --------------------------------------------------------------------- */
 /* Types                                                                  */
@@ -298,7 +299,7 @@ export interface ComparisonChartProps {
 }
 
 export function ComparisonChart({
-  series,
+  series: rawSeries,
   normalized,
   externalDrawings,
   drawings: controlledDrawings,
@@ -326,6 +327,16 @@ export function ComparisonChart({
   const splitChartsRef = useRef<
     Map<string, { chart: IChartApi; series: AnySeriesApi }>
   >(new Map());
+
+  // Candlestick interval — aggregate the daily OHLCV into wider bars on demand.
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>("D");
+  const series = useMemo(
+    () =>
+      candleInterval === "D"
+        ? rawSeries
+        : rawSeries.map((s) => ({ symbol: s.symbol, candles: aggregateCandles(s.candles, candleInterval) })),
+    [rawSeries, candleInterval],
+  );
 
   const [chartStyle, setChartStyle] = useState<ChartStyle>(
     controlledChartStyle ?? activeChartStyle ?? "candles",
@@ -1490,6 +1501,22 @@ export function ComparisonChart({
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="flex items-center gap-0.5 rounded-lg border border-hairline bg-black/20 p-0.5">
+            {(["D", "W", "M", "Q", "6M", "Y"] as CandleInterval[]).map((iv) => (
+              <button
+                key={iv}
+                type="button"
+                onClick={() => setCandleInterval(iv)}
+                title={`${iv} candles`}
+                className={`rounded px-2 py-1 text-[11px] font-bold transition ${
+                  candleInterval === iv ? "bg-accent text-[color:var(--on-accent)]" : "text-txt-dim hover:text-txt"
+                }`}
+              >
+                {iv}
+              </button>
+            ))}
           </div>
 
           {drawings.length > 0 && (
