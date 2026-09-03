@@ -86,6 +86,7 @@ export const usePortfolioStore = create<PortfolioStore>()((set, get) => ({
   toggleFavorite: (symbol) => {
     const cleaned = symbol.toUpperCase();
     const { favorites, userId } = get();
+    if (!userId) return; // watchlist is per-user; ignore when signed out
     const exists = favorites.includes(cleaned);
     set({
       favorites: exists
@@ -100,6 +101,9 @@ export const usePortfolioStore = create<PortfolioStore>()((set, get) => ({
 
   buyStock: (symbol, companyName, quantity, price) => {
     const { virtualBalance, holdings, transactions, userId } = get();
+    if (!userId) {
+      return { success: false, message: "Please sign in to trade — StockPilot portfolios are per user." };
+    }
     const result = buyLogic(
       { virtualBalance, holdings, transactions },
       symbol,
@@ -122,6 +126,9 @@ export const usePortfolioStore = create<PortfolioStore>()((set, get) => ({
 
   sellStock: (symbol, quantity, price) => {
     const { virtualBalance, holdings, transactions, userId } = get();
+    if (!userId) {
+      return { success: false, message: "Please sign in to trade — StockPilot portfolios are per user." };
+    }
     const result = sellLogic(
       { virtualBalance, holdings, transactions },
       symbol,
@@ -140,13 +147,17 @@ export const usePortfolioStore = create<PortfolioStore>()((set, get) => ({
   },
 
   resetPortfolio: () => {
-    set({ virtualBalance: DEFAULT_BALANCE, holdings: [], transactions: [] });
     const { userId } = get();
-    if (userId) void persist.persistReset(userId);
+    if (!userId) return;
+    set({ virtualBalance: DEFAULT_BALANCE, holdings: [], transactions: [] });
+    void persist.persistReset(userId);
   },
 
   setAlert: (symbol, targetPrice, condition) => {
     const cleaned = symbol.toUpperCase();
+    if (!get().userId) {
+      return { success: false, message: "Please sign in to set price alerts." };
+    }
     if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
       return { success: false, message: "Invalid target price." };
     }
@@ -169,9 +180,10 @@ export const usePortfolioStore = create<PortfolioStore>()((set, get) => ({
   },
 
   removeAlert: (id) => {
-    set({ alerts: get().alerts.filter((a) => a.id !== id) });
     const { userId } = get();
-    if (userId) void persist.removeAlert(userId, id);
+    if (!userId) return;
+    set({ alerts: get().alerts.filter((a) => a.id !== id) });
+    void persist.removeAlert(userId, id);
   },
 
   getAlerts: () => get().alerts,

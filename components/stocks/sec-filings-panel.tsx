@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Search, ChevronDown, ChevronRight, ExternalLink, ShieldAlert } from "lucide-react";
+import { FileText, Search, ChevronDown, ChevronRight, ChevronLeft, ExternalLink, ShieldAlert, Play, Pause, X } from "lucide-react";
 import { getSECFilings, type SECFiling } from "@/lib/finnhub/client";
 import type { FilingAnalysis } from "@/lib/sec-analysis";
+import { importantSentences } from "@/lib/sec-highlights";
 import { formatCompact } from "@/lib/format";
 import { Panel, Button, Badge, EmptyState, Skeleton } from "@/components/ui/kit";
 
@@ -15,6 +16,15 @@ type ReportState = {
   error?: string;
   kind: "xml" | "html" | "text";
   rawText: string;
+};
+
+type ReviewFiling = {
+  form: string | null;
+  filedDate: string | null;
+  accessNumber: string | null;
+  reportUrl: string | null;
+  filingUrl: string | null;
+  takeaway: string;
 };
 
 function filingKey(f: SECFiling, index: number): string {
@@ -29,6 +39,12 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
   const [highlightTerms, setHighlightTerms] = useState<string[]>([]);
   const [analysis, setAnalysis] = useState<FilingAnalysis | null>(null);
   const pendingOpen = useRef<{ accessNumber?: string | null; reportUrl?: string | null } | null>(null);
+
+  // Guided review: agent-triggered auto-advancing walkthrough of the latest filings.
+  const [review, setReview] = useState<{ filings: ReviewFiling[]; agentTerms: string[] } | null>(null);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewPlaying, setReviewPlaying] = useState(false);
+  const [reviewDoc, setReviewDoc] = useState<{ loading: boolean; error?: string; html: string } | null>(null);
 
   useEffect(() => {
     if (symbol) setSelectedSymbol(symbol.toUpperCase());
@@ -60,6 +76,73 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
     window.addEventListener("stockpilot:sec-analyze", onAnalyze);
     return () => window.removeEventListener("stockpilot:sec-analyze", onAnalyze);
   }, []);
+
+  // WebMCP tool → start a guided review across the latest filings.
+  useEffect(() => {
+    function onReview(event: Event) {
+      const d = (event as CustomEvent).detail;
+      if (!d) return;
+      if (d.symbol) setSelectedSymbol(String(d.symbol).toUpperCase());
+      setAnalysis(d.analysis ?? null);
+      const filings: ReviewFiling[] = Array.isArray(d.filings) ? d.filings : [];
+      if (!filings.length) return;
+      setExpandedKey(null);
+      setReview({ filings, agentTerms: Array.isArray(d.highlight) ? d.highlight.map(String) : [] });
+      setReviewIndex(0);
+      setReviewPlaying(true);
+    }
+    window.addEventListener("stockpilot:sec-review", onReview);
+    return () => window.removeEventListener("stockpilot:sec-review", onReview);
+  }, []);
+
+  // Lazily fetch + highlight the current filing in the review.
+  useEffect(() => {
+    if (!review) {
+      setReviewDoc(null);
+      return;
+    }
+    const filing = review.filings[reviewIndex];
+    const url = filing?.reportUrl ?? filing?.filingUrl;
+    if (!url) {
+      setReviewDoc({ loading: false, error: "No document available for this filing.", html: "" });
+      return;
+    }
+    let cancelled = false;
+    setReviewDoc({ loading: true, html: "" });
+    fetch(`/api/sec/report?url=${encodeURIComponent(url)}`)
+      .then((r) => r.json())
+      .then((p: { error?: string; kind?: ReportState["kind"]; rawText?: string }) => {
+        if (cancelled) return;
+        if (p.error) {
+          setReviewDoc({ loading: false, error: p.error, html: "" });
+          return;
+        }
+        const plain = toPlainText(p.rawText ?? "", p.kind ?? "text").slice(0, 40000);
+        const escaped = escapeHtml(plain);
+        const terms = [...importantSentences(plain), ...review.agentTerms].map((t) => escapeHtml(t));
+        const regex = buildReviewRegex(terms);
+        setReviewDoc({ loading: false, html: markMatches(escaped, regex, { n: 0 }) });
+      })
+      .catch((e) => {
+        if (!cancelled) setReviewDoc({ loading: false, error: String(e), html: "" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [review, reviewIndex]);
+
+  // Auto-advance once the current filing has rendered.
+  useEffect(() => {
+    if (!review || !reviewPlaying || !reviewDoc || reviewDoc.loading) return;
+    const timer = window.setTimeout(() => {
+      setReviewIndex((i) => {
+        if (i < review.filings.length - 1) return i + 1;
+        setReviewPlaying(false);
+        return i;
+      });
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [review, reviewPlaying, reviewIndex, reviewDoc]);
 
   // Resolve a pending agent-triggered open once the right filings have loaded.
   useEffect(() => {
@@ -141,6 +224,66 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
           </label>
         )}
       </div>
+
+      {review && (
+        <div className="space-y-3 border-b border-hairline bg-app/40 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent">
+              <span className="uppercase tracking-[0.18em]">Guided review</span>
+              <span className="text-txt-mute">
+                {reviewIndex + 1} / {review.filings.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="ghost" onClick={() => setReviewIndex((i) => Math.max(0, i - 1))} disabled={reviewIndex === 0}>
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setReviewPlaying((p) => !p)}>
+                {reviewPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setReviewIndex((i) => Math.min(review.filings.length - 1, i + 1))} disabled={reviewIndex >= review.filings.length - 1}>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setReview(null); setReviewDoc(null); setReviewPlaying(false); }}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          {analysis && <RiskScorecard analysis={analysis} />}
+
+          {(() => {
+            const f = review.filings[reviewIndex];
+            return (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Badge tone="accent">{f?.form ?? "Filing"}</Badge>
+                  <div>
+                    <div className="font-mono text-sm font-semibold text-txt">{f?.takeaway}</div>
+                    <div className="text-[11px] text-txt-mute">Filed {formatDate(f?.filedDate ?? undefined)}</div>
+                  </div>
+                </div>
+                {f?.filingUrl && (
+                  <a href={f.filingUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:text-accent-hover">
+                    Original <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            );
+          })()}
+
+          {reviewDoc?.loading ? (
+            <Skeleton className="h-72 w-full" />
+          ) : reviewDoc?.error ? (
+            <div className="rounded-lg border border-down/30 bg-[color:rgba(234,57,67,0.08)] p-3 text-sm text-down">{reviewDoc.error}</div>
+          ) : (
+            <div
+              className="sp-report max-h-[420px] overflow-auto rounded-lg border border-hairline bg-app p-4 text-[13px] leading-7 text-txt-dim"
+              dangerouslySetInnerHTML={{ __html: reviewDoc?.html ?? "" }}
+            />
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2 p-5">
@@ -413,6 +556,36 @@ function buildHighlightRegex(terms: string[]): RegExp | null {
   const custom = terms.filter(Boolean).map((t) => escapeRegExp(t));
   if (custom.length === 0) return null;
   return new RegExp(`(${custom.join("|")})`, "gi");
+}
+
+const REVIEW_FIGURES = ["\\$[0-9][0-9,]*(?:\\.[0-9]+)?", "[0-9]+(?:\\.[0-9]+)?%", "\\b\\d{4,}\\b"];
+// The guided review always highlights concrete figures, plus the important
+// sentences / agent terms passed in. Returns a regex even with no terms.
+function buildReviewRegex(terms: string[]): RegExp {
+  const parts = [...terms.filter(Boolean).map((t) => escapeRegExp(t)), ...REVIEW_FIGURES];
+  return new RegExp(`(${parts.join("|")})`, "gi");
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;|&rsquo;|&lsquo;|&apos;/gi, "'")
+    .replace(/&quot;|&ldquo;|&rdquo;/gi, '"')
+    .replace(/&#\d+;/g, " ");
+}
+
+// Normalize a filing into clean, readable plain text for the guided review,
+// where whole-sentence highlighting lands reliably (interleaved HTML doesn't).
+function toPlainText(rawText: string, kind: ReportState["kind"]): string {
+  if (kind === "xml") {
+    const readable = xmlToReadableHtml(rawText);
+    return decodeEntities(stripTags(readable ?? rawText));
+  }
+  if (kind === "html") return decodeEntities(stripTags(rawText));
+  return rawText.replace(/\s+/g, " ").trim();
 }
 
 // Wrap each match in a <mark> carrying a staggered index (--i) so highlights

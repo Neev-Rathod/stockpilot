@@ -478,14 +478,33 @@ export const webMcpTools: WebMcpTool[] = [
           filingScore: composite.filingScore,
         };
         if (typeof window !== "undefined") {
+          const takeawayFor = (form?: string | null): string => {
+            const fm = (form ?? "").toUpperCase();
+            if (fm.includes("10-K")) return "Annual report (10-K)";
+            if (fm.includes("10-Q")) return "Quarterly report (10-Q)";
+            if (fm.includes("8-K")) return "Material event (8-K)";
+            if (fm.includes("144")) return "Proposed insider sale (Form 144)";
+            if (fm.includes("3")) return "Initial insider ownership (Form 3)";
+            if (fm.includes("5")) return "Annual insider ownership (Form 5)";
+            if (fm.includes("4")) return "Insider transaction (Form 4)";
+            if (fm.startsWith("S-") || fm.includes("S-1")) return "Securities registration";
+            if (fm.includes("DEF")) return "Proxy statement";
+            return form ?? "Filing";
+          };
           window.dispatchEvent(
-            new CustomEvent("stockpilot:sec-analyze", {
+            new CustomEvent("stockpilot:sec-review", {
               detail: {
                 symbol,
                 highlight,
-                reportUrl: reportUrl ?? null,
-                accessNumber: selectedFiling.accessNumber ?? null,
                 analysis: riskAnalysis,
+                filings: latest10.map((f) => ({
+                  form: f.form ?? null,
+                  filedDate: f.filedDate ?? null,
+                  accessNumber: f.accessNumber ?? null,
+                  reportUrl: f.reportUrl ?? null,
+                  filingUrl: f.filingUrl ?? null,
+                  takeaway: takeawayFor(f.form),
+                })),
               },
             }),
           );
@@ -2993,6 +3012,34 @@ export const webMcpTools: WebMcpTool[] = [
     },
   },
 ];
+
+// ─── Auth gate ───────────────────────────────────────────────────────────────
+// Portfolio, watchlist, and price-alert tools are per-user: block them (reads
+// AND writes) unless there's a signed-in Supabase session. Applied centrally by
+// wrapping each tool's execute, so no personal action works while logged out.
+const AUTH_REQUIRED_CATEGORIES = new Set(["Portfolio", "Watchlist & Alerts"]);
+
+for (const tool of webMcpTools) {
+  if (!AUTH_REQUIRED_CATEGORIES.has(tool.category)) continue;
+  const runTool = tool.execute;
+  tool.execute = async (params) => {
+    if (!usePortfolioStore.getState().userId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error:
+                "Not signed in. Portfolio, watchlist, and price-alert features require logging into StockPilot first.",
+              action: "Ask the user to sign in, then retry.",
+            }),
+          },
+        ],
+      };
+    }
+    return runTool(params);
+  };
+}
 
 // ─── Registration ──────────────────────────────────────────────────────────────
 // Track which tools have already been registered so repeated calls (React
