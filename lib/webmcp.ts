@@ -2346,7 +2346,7 @@ export const webMcpTools: WebMcpTool[] = [
     name: "navigate_to",
     category: "Navigation",
     description:
-      "Navigate the user's browser to a page in the StockPilot app. Pages: /, /markets, /portfolio, /watchlist, /orders, /news, /ipos, /compare, /stock/SYMBOL, /learn.",
+      "Navigate the user's browser to a page in the StockPilot app. Pages: /, /markets, /portfolio, /watchlist, /orders, /news, /ipos, /compare, /analysis, /stock/SYMBOL.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2369,8 +2369,8 @@ export const webMcpTools: WebMcpTool[] = [
         "/news",
         "/ipos",
         "/compare",
+        "/analysis",
         "/stock/",
-        "/learn",
         "/admin",
       ];
       const isAllowed = allowedPrefixes.some(
@@ -2900,120 +2900,9 @@ export const webMcpTools: WebMcpTool[] = [
     },
   },
 
-  // ─── LEGACY TOOLS (enhanced) ─────────────────────────────────────────────────
-  {
-    name: "start_beginner_tutorial",
-    category: "Education",
-    description:
-      "Start a guided investing tutorial on a topic. Topics: intro, candlesticks, portfolio, riskmanagement, technicalanalysis, fundamentals, elliottwaves, patterns.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        topic: { type: "string", description: "Tutorial topic to learn about" },
-      },
-      required: ["topic"],
-    },
-    async execute(params) {
-      const topic = String(params.topic ?? "intro")
-        .toLowerCase()
-        .replace(/\s+/g, "");
-      const tutorials: Record<
-        string,
-        { title: string; steps: string[]; tip: string }
-      > = {
-        intro: {
-          title: "Stock Market Basics",
-          steps: [
-            "Understand what stocks are and why companies issue them",
-            "Learn market hours, exchanges (NYSE, NASDAQ)",
-            "Understand market cap, P/E ratio, and earnings",
-            "Practice buying your first stock with virtual funds using 'buy_stock'",
-          ],
-          tip: "Start by using 'screen_stocks' to find stocks under $50.",
-        },
-        candlesticks: {
-          title: "Reading Candlestick Charts",
-          steps: [
-            "Open, High, Low, Close (OHLC) explained",
-            "Green candle = bullish day; Red candle = bearish day",
-            "Doji, Hammer, Engulfing patterns",
-            "Volume confirmation of price moves",
-          ],
-          tip: "Open any stock with 'open_stock' and observe the TradingView candlestick chart.",
-        },
-        portfolio: {
-          title: "Building a Portfolio",
-          steps: [
-            "Diversification across sectors and asset classes",
-            "Position sizing — never risk more than 2-5% per trade",
-            "Use 'calculate_position_size' to size entries correctly",
-            "Track P&L with 'analyze_portfolio'",
-          ],
-          tip: "Use 'auto_invest' with strategy='diversified' to build a starter portfolio.",
-        },
-        riskmanagement: {
-          title: "Risk Management",
-          steps: [
-            "Stop-loss orders protect capital",
-            "Risk/Reward ratio should be at least 1:2",
-            "Never invest more than you can afford to lose",
-            "Use 'get_portfolio_risk' to monitor concentration",
-          ],
-          tip: "Set stop-losses 5-8% below entry price for swing trades.",
-        },
-        technicalanalysis: {
-          title: "Technical Analysis",
-          steps: [
-            "Support and resistance levels",
-            "Moving averages (SMA/EMA)",
-            "RSI, MACD momentum indicators",
-            "Chart patterns: Head & Shoulders, ABCD, Triangles",
-          ],
-          tip: "Use 'detect_chart_pattern' to identify patterns on any stock.",
-        },
-        elliottwaves: {
-          title: "Elliott Wave Theory",
-          steps: [
-            "Markets move in 5 waves (impulse) + 3 waves (correction)",
-            "Wave 3 is always the longest motive wave",
-            "Fibonacci ratios define wave relationships",
-            "Complex corrections: flats, zigzags, triangles",
-          ],
-          tip: "Use 'detect_elliott_wave' to identify wave structures on AAPL or TSLA.",
-        },
-        patterns: {
-          title: "Chart Patterns Masterclass",
-          steps: [
-            "Reversal patterns: H&S, Double Top/Bottom, XABCD, Cypher",
-            "Continuation patterns: Triangles, Flags, Three Drives",
-            "Harmonic patterns use Fibonacci ratios precisely",
-            "Volume must confirm all pattern breakouts",
-          ],
-          tip: "Try 'detect_chart_pattern' with pattern='xabcd' on NVDA.",
-        },
-        fundamentals: {
-          title: "Fundamental Analysis",
-          steps: [
-            "Revenue, earnings, and profit margins",
-            "P/E ratio, EPS, Price/Book",
-            "Competitive moat and industry position",
-            "Balance sheet: debt, cash flow, equity",
-          ],
-          tip: "Use 'get_stock_details' to see company profile and market cap.",
-        },
-      };
-      const tut = tutorials[topic] ?? tutorials.intro;
-      return {
-        content: [
-          { type: "text", text: JSON.stringify({ topic, ...tut }, null, 2) },
-        ],
-      };
-    },
-  },
-
   {
     name: "get_earnings_calendar",
-    category: "Education",
+    category: "Market Data",
     description:
       "Return upcoming earnings dates (next ~120 days) for the tracked stock universe, from Finnhub's earnings calendar.",
     inputSchema: { type: "object", properties: {} },

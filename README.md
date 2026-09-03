@@ -26,7 +26,7 @@ All trading is **simulated** with a virtual $100,000 balance — no real money o
 
 - **Auth + persistence** — email/password sign-in via Supabase; portfolio, watchlist, and alerts persist per-user.
 - **Virtual trading** — buy/sell with a $100k paper balance.
-- **Markets, News, IPOs, SEC filings, Compare, Learn** pages, plus per-stock detail pages.
+- **Markets, News, IPOs, SEC filings, Compare, Analysis** pages, plus per-stock detail pages.
 - **Interactive charts** — one shared engine (candles / bars / line / area, indicators, drawings) across the whole app; multi-symbol compare with a color legend.
 - **Admin diagnostics page** (`/admin`) showing Finnhub API call stats.
 - **WebMCP tool registry** — the headline feature: 42 tools across 8 categories, auto-registered on page load.
@@ -274,14 +274,6 @@ Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `docume
 | `open_stock`   | Open a stock's detail page.                   | `symbol`     |
 | `open_compare` | Open the compare page, optionally pre-filled. | `symbols?[]` |
 
-### 🎓 Education
-
-| Tool                      | Description                                                                                                                             | Key params             |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| `start_beginner_tutorial` | Guided tutorial on a topic (intro, candlesticks, portfolio, risk, technicals, fundamentals, Elliott waves, patterns).                   | `topic`                |
-| `get_earnings_calendar`   | Upcoming earnings dates for the universe — real, from Finnhub.                                                                          | —                      |
-| `analyze_sec_filings`     | Open a company's most material SEC filing inline, highlight agent-chosen passages, and return a real risk score + fundamental snapshot. | `symbol`, `highlight?` |
-
 ---
 
 ## Project structure
@@ -294,7 +286,7 @@ app/
     sec/report/route.ts     # Fetches an SEC report (SEC-domain allowlisted)
   admin/                    # API diagnostics dashboard
   login/ signup/ alerts/    # Auth pages + price-alerts screen
-  compare/ ipos/ learn/ markets/ news/ orders/
+  compare/ analysis/ ipos/ markets/ news/ orders/
   portfolio/ sec-filings/ watchlist/ stock/[symbol]/
   page.tsx                  # Home dashboard
   layout.tsx                # App shell (sidebar + top bar)

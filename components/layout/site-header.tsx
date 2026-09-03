@@ -9,7 +9,6 @@ import {
   CalendarRange,
   FileText,
   GitCompareArrows,
-  GraduationCap,
   LayoutGrid,
   Newspaper,
   ReceiptText,
@@ -37,7 +36,6 @@ const navGroups = [
       { label: "News", href: "/news", icon: Newspaper },
       { label: "IPOs", href: "/ipos", icon: CalendarRange },
       { label: "SEC Filings", href: "/sec-filings", icon: FileText },
-      { label: "Learn", href: "/learn", icon: GraduationCap },
     ],
   },
 ];
