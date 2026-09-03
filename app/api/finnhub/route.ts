@@ -240,6 +240,7 @@ export async function GET(request: NextRequest) {
   const from = searchParams.get("from") ?? undefined;
   const to = searchParams.get("to") ?? undefined;
   const freq = searchParams.get("freq") ?? undefined;
+  const limit = searchParams.get("limit") ?? undefined;
 
   try {
     if (type === "quote") {
@@ -407,6 +408,30 @@ export async function GET(request: NextRequest) {
       }
 
       const result = await proxyFinnhub("/stock/recommendation", { symbol });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
+    if (type === "metric") {
+      if (!symbol) {
+        return NextResponse.json({ error: "Missing symbol." }, { status: 400 });
+      }
+
+      const result = await proxyFinnhub("/stock/metric", {
+        symbol,
+        metric: "all",
+      });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
+    if (type === "earnings") {
+      if (!symbol) {
+        return NextResponse.json({ error: "Missing symbol." }, { status: 400 });
+      }
+
+      const result = await proxyFinnhub("/stock/earnings", {
+        symbol,
+        limit,
+      });
       return NextResponse.json(result.body, { status: result.status });
     }
 

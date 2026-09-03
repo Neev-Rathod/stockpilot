@@ -274,6 +274,21 @@ export interface FinnhubFinancialsReportedResponse {
   data: FinnhubFinancialReportItem[];
 }
 
+export interface FinnhubBasicFinancials {
+  metric?: Record<string, number>;
+  series?: Record<string, Record<string, Array<{ period?: string; v?: number }>>>;
+}
+
+export interface FinnhubEarningsSurprise {
+  actual?: number | null;
+  estimate?: number | null;
+  period?: string;
+  surprise?: number | null;
+  surprisePercent?: number | null;
+  quarter?: number;
+  year?: number;
+}
+
 export async function getRecommendationTrends(
   symbol: string,
 ): Promise<FinnhubRecommendationItem[]> {
@@ -317,6 +332,40 @@ export async function getFinancialsReported(params: {
       : null;
   } catch {
     return null;
+  }
+}
+
+export async function getBasicFinancials(
+  symbol: string,
+): Promise<FinnhubBasicFinancials | null> {
+  const cleaned = symbol.trim().toUpperCase();
+  if (!cleaned) return null;
+  try {
+    const result = await finnhubRequest<FinnhubBasicFinancials>({
+      type: "metric",
+      symbol: cleaned,
+    });
+    return result && typeof result === "object" ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getEarningsSurprises(
+  symbol: string,
+  limit = 4,
+): Promise<FinnhubEarningsSurprise[]> {
+  const cleaned = symbol.trim().toUpperCase();
+  if (!cleaned) return [];
+  try {
+    const result = await finnhubRequest<FinnhubEarningsSurprise[]>({
+      type: "earnings",
+      symbol: cleaned,
+      limit: String(limit),
+    });
+    return Array.isArray(result) ? result : [];
+  } catch {
+    return [];
   }
 }
 

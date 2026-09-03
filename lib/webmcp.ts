@@ -8,6 +8,8 @@ import {
   getRecommendationTrends,
   getFinancialsReported,
   getEarningsCalendar,
+  getBasicFinancials,
+  getEarningsSurprises,
 } from "@/lib/finnhub/client";
 import { getLocalOhlcv } from "@/lib/ohlcv";
 import {
@@ -213,6 +215,54 @@ export const webMcpTools: WebMcpTool[] = [
       return {
         content: [
           { type: "text", text: JSON.stringify({ quote, profile }, null, 2) },
+        ],
+      };
+    },
+  },
+
+  {
+    name: "open_company_analysis",
+    category: "Market Data",
+    description:
+      "Open the full single-company analysis page (financials, valuation, analyst trends, earnings surprises, news) for a ticker and return a short summary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "Ticker like AAPL",
+        },
+      },
+      required: ["symbol"],
+    },
+    async execute(params) {
+      const symbol = String(params.symbol ?? "").trim().toUpperCase();
+      if (!symbol) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                message: "Symbol is required.",
+              }),
+            },
+          ],
+        };
+      }
+
+      const path = `/analysis?symbol=${encodeURIComponent(symbol)}`;
+      if (typeof window !== "undefined") window.location.href = path;
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              message: `Opening ${symbol} company analysis. The page includes financials, valuation, analyst trends, earnings surprises, and news.`,
+              path,
+            }),
+          },
         ],
       };
     },

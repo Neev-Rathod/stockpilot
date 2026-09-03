@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   Newspaper,
   ReceiptText,
+  ScanSearch,
   Wallet,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ const navGroups = [
     label: "Research",
     items: [
       { label: "Compare", href: "/compare", icon: GitCompareArrows },
+      { label: "Analysis", href: "/analysis", icon: ScanSearch },
       { label: "News", href: "/news", icon: Newspaper },
       { label: "IPOs", href: "/ipos", icon: CalendarRange },
       { label: "SEC Filings", href: "/sec-filings", icon: FileText },
