@@ -115,13 +115,13 @@ npm start
 
 ### Available scripts
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start the dev server at `localhost:3000` |
-| `npm run build` | Production build |
-| `npm start` | Serve the production build |
-| `npm run lint` | Run ESLint |
-| `npm test` | Run unit tests (Vitest) |
+| Command         | What it does                             |
+| --------------- | ---------------------------------------- |
+| `npm run dev`   | Start the dev server at `localhost:3000` |
+| `npm run build` | Production build                         |
+| `npm start`     | Serve the production build               |
+| `npm run lint`  | Run ESLint                               |
+| `npm test`      | Run unit tests (Vitest)                  |
 
 ## Deploying to Vercel with GitHub Actions
 
@@ -138,11 +138,11 @@ Import this GitHub repository in [Vercel](https://vercel.com/new), keep the fram
 
 In the GitHub repository, open **Settings → Secrets and variables → Actions** and add:
 
-| Secret | Value |
-|---|---|
-| `VERCEL_TOKEN` | A token created in Vercel → Account Settings → Tokens |
-| `VERCEL_ORG_ID` | The `orgId` from the Vercel project `.vercel/project.json` or Vercel project settings |
-| `VERCEL_PROJECT_ID` | The `projectId` from the same file or Vercel project settings |
+| Secret              | Value                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `VERCEL_TOKEN`      | A token created in Vercel → Account Settings → Tokens                                 |
+| `VERCEL_ORG_ID`     | The `orgId` from the Vercel project `.vercel/project.json` or Vercel project settings |
+| `VERCEL_PROJECT_ID` | The `projectId` from the same file or Vercel project settings                         |
 
 To obtain both IDs locally after linking the project, run `npx vercel link`, then inspect `.vercel/project.json`. The workflow creates its own temporary Vercel metadata during CI; `.vercel` remains ignored by Git.
 
@@ -178,12 +178,17 @@ The registration lives in [`lib/webmcp.ts`](lib/webmcp.ts) (driven from
 ```js
 document.modelContext.registerTool({
   name: "analyze_sec_filings",
-  description: "Fetch a company's most material SEC filing, open it in the report viewer, highlight the key passages, and return a risk score plus a fundamental snapshot.",
+  description:
+    "Fetch a company's most material SEC filing, open it in the report viewer, highlight the key passages, and return a risk score plus a fundamental snapshot.",
   inputSchema: {
     type: "object",
     properties: {
       symbol: { type: "string", description: "Ticker symbol like AAPL" },
-      highlight: { type: "array", items: { type: "string" }, description: "Phrases to highlight in the report" },
+      highlight: {
+        type: "array",
+        items: { type: "string" },
+        description: "Phrases to highlight in the report",
+      },
     },
     required: ["symbol"],
   },
@@ -205,77 +210,77 @@ Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `docume
 
 ### 📈 Market Data
 
-| Tool | Description | Key params |
-|---|---|---|
-| `search_stock` | Search the curated stock universe by symbol or company name. | `query` |
-| `get_stock_details` | Full quote + company profile + metadata for a ticker. | `symbol` |
-| `get_stock_news` | Latest news articles for a stock. | `symbol`, `days?` |
-| `get_market_news_summary` | Digest of general market news. | `category?` (`general\|forex\|crypto\|merger`) |
-| `rank_stocks` | Rank the universe by a metric. | `metric` (`performance\|volume\|price`), `limit?` |
-| `screen_stocks` | Filter stocks by price/%-change/sector. | `minPrice?`, `maxPrice?`, `minPercentChange?`, `maxPercentChange?`, `sector?`, `limit?` |
-| `get_sector_performance` | Average performance by sector. | — |
-| `get_market_sentiment` | Fear/Greed-style sentiment score (0–100) from price momentum. | — |
-| `get_top_performers` | Top N gainers or losers. | `limit?`, `direction?` (`gainers\|losers`) |
-| `compare_stocks` | Compare 2–5 stocks side by side. | `symbols[]` |
-| `get_correlation` | Estimated price correlation between two stocks (from beta/sector). | `symbol1`, `symbol2` |
+| Tool                      | Description                                                        | Key params                                                                              |
+| ------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `search_stock`            | Search the curated stock universe by symbol or company name.       | `query`                                                                                 |
+| `get_stock_details`       | Full quote + company profile + metadata for a ticker.              | `symbol`                                                                                |
+| `get_stock_news`          | Latest news articles for a stock.                                  | `symbol`, `days?`                                                                       |
+| `get_market_news_summary` | Digest of general market news.                                     | `category?` (`general\|forex\|crypto\|merger`)                                          |
+| `rank_stocks`             | Rank the universe by a metric.                                     | `metric` (`performance\|volume\|price`), `limit?`                                       |
+| `screen_stocks`           | Filter stocks by price/%-change/sector.                            | `minPrice?`, `maxPrice?`, `minPercentChange?`, `maxPercentChange?`, `sector?`, `limit?` |
+| `get_sector_performance`  | Average performance by sector.                                     | —                                                                                       |
+| `get_market_sentiment`    | Fear/Greed-style sentiment score (0–100) from price momentum.      | —                                                                                       |
+| `get_top_performers`      | Top N gainers or losers.                                           | `limit?`, `direction?` (`gainers\|losers`)                                              |
+| `compare_stocks`          | Compare 2–5 stocks side by side.                                   | `symbols[]`                                                                             |
+| `get_correlation`         | Estimated price correlation between two stocks (from beta/sector). | `symbol1`, `symbol2`                                                                    |
 
 ### 🧩 Chart Patterns
 
-| Tool | Description | Key params |
-|---|---|---|
-| `detect_chart_pattern` | Detect a technical pattern (head & shoulders, ABCD, XABCD, cypher, triangles, double top/bottom, three drives, …). | `symbol`, `pattern` |
-| `detect_elliott_wave` | Detect an Elliott Wave structure (impulse 1-2-3-4-5, ABC, triangle, WXY, WXYXZ). | `symbol`, `wave_type` |
-| `get_support_resistance` | Compute S1–S3 / R1–R3 levels and pivot. | `symbol` |
-| `get_trend_direction` | Uptrend / Downtrend / Sideways with strength + advice. | `symbol` |
+| Tool                     | Description                                                                                                        | Key params            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| `detect_chart_pattern`   | Detect a technical pattern (head & shoulders, ABCD, XABCD, cypher, triangles, double top/bottom, three drives, …). | `symbol`, `pattern`   |
+| `detect_elliott_wave`    | Detect an Elliott Wave structure (impulse 1-2-3-4-5, ABC, triangle, WXY, WXYXZ).                                   | `symbol`, `wave_type` |
+| `get_support_resistance` | Compute S1–S3 / R1–R3 levels and pivot.                                                                            | `symbol`              |
+| `get_trend_direction`    | Uptrend / Downtrend / Sideways with strength + advice.                                                             | `symbol`              |
 
 ### 💼 Portfolio
 
-| Tool | Description | Key params |
-|---|---|---|
-| `get_portfolio` | Full virtual portfolio: balance, holdings, transactions. | — |
-| `analyze_portfolio` | Total value, P&L, return %, per-holding breakdown. | — |
-| `get_portfolio_risk` | Concentration, diversification score, estimated beta, sector exposure. | — |
-| `buy_stock` | Simulate buying shares with virtual funds. | `symbol`, `quantity` |
-| `sell_stock` | Simulate selling shares. | `symbol`, `quantity` |
-| `auto_invest` | Spread a budget across stocks by strategy. | `budget`, `strategy` (`momentum\|diversified\|conservative\|aggressive`), `stock_count?` |
-| `optimize_portfolio` | Suggest an allocation for a budget + risk level. | `budget`, `risk_level?` |
-| `rebalance_portfolio` | Suggest actions to equal-weight holdings. | — |
-| `calculate_position_size` | Position size from account risk % and stop-loss. | `symbol`, `risk_percent`, `stop_loss_price` |
-| `calculate_profit_loss` | P&L for a position given entry price + quantity. | `symbol`, `entry_price`, `quantity` |
-| `suggest_diversification` | Suggest stocks in sectors you don't hold. | — |
-| `reset_portfolio` | Reset to the starting $100,000 balance. | — |
+| Tool                      | Description                                                            | Key params                                                                               |
+| ------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `get_portfolio`           | Full virtual portfolio: balance, holdings, transactions.               | —                                                                                        |
+| `analyze_portfolio`       | Total value, P&L, return %, per-holding breakdown.                     | —                                                                                        |
+| `get_portfolio_risk`      | Concentration, diversification score, estimated beta, sector exposure. | —                                                                                        |
+| `buy_stock`               | Simulate buying shares with virtual funds.                             | `symbol`, `quantity`                                                                     |
+| `sell_stock`              | Simulate selling shares.                                               | `symbol`, `quantity`                                                                     |
+| `auto_invest`             | Spread a budget across stocks by strategy.                             | `budget`, `strategy` (`momentum\|diversified\|conservative\|aggressive`), `stock_count?` |
+| `optimize_portfolio`      | Suggest an allocation for a budget + risk level.                       | `budget`, `risk_level?`                                                                  |
+| `rebalance_portfolio`     | Suggest actions to equal-weight holdings.                              | —                                                                                        |
+| `calculate_position_size` | Position size from account risk % and stop-loss.                       | `symbol`, `risk_percent`, `stop_loss_price`                                              |
+| `calculate_profit_loss`   | P&L for a position given entry price + quantity.                       | `symbol`, `entry_price`, `quantity`                                                      |
+| `suggest_diversification` | Suggest stocks in sectors you don't hold.                              | —                                                                                        |
+| `reset_portfolio`         | Reset to the starting $100,000 balance.                                | —                                                                                        |
 
 ### 🔔 Watchlist & Alerts
 
-| Tool | Description | Key params |
-|---|---|---|
-| `get_watchlist` | Return favorited stocks with live quotes. | — |
-| `add_to_watchlist` | Add a symbol to the watchlist. | `symbol` |
-| `remove_from_watchlist` | Remove a symbol from the watchlist. | `symbol` |
-| `set_price_alert` | Set a virtual price alert. | `symbol`, `target_price`, `condition` (`above\|below`) |
-| `get_price_alerts` | List active alerts, checked against live prices. | — |
+| Tool                    | Description                                      | Key params                                             |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------------------ |
+| `get_watchlist`         | Return favorited stocks with live quotes.        | —                                                      |
+| `add_to_watchlist`      | Add a symbol to the watchlist.                   | `symbol`                                               |
+| `remove_from_watchlist` | Remove a symbol from the watchlist.              | `symbol`                                               |
+| `set_price_alert`       | Set a virtual price alert.                       | `symbol`, `target_price`, `condition` (`above\|below`) |
+| `get_price_alerts`      | List active alerts, checked against live prices. | —                                                      |
 
 ### 🤖 AI Strategy
 
-| Tool | Description | Key params |
-|---|---|---|
+| Tool                | Description                                                                  | Key params                               |
+| ------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
 | `backtest_strategy` | Simulate a strategy on a stock (SMA crossover, RSI mean-revert, buy & hold). | `symbol`, `strategy`, `initial_capital?` |
 
 ### 🧭 Navigation
 
-| Tool | Description | Key params |
-|---|---|---|
-| `navigate_to` | Navigate to any StockPilot page. | `path` |
-| `open_stock` | Open a stock's detail page. | `symbol` |
+| Tool           | Description                                   | Key params   |
+| -------------- | --------------------------------------------- | ------------ |
+| `navigate_to`  | Navigate to any StockPilot page.              | `path`       |
+| `open_stock`   | Open a stock's detail page.                   | `symbol`     |
 | `open_compare` | Open the compare page, optionally pre-filled. | `symbols?[]` |
 
 ### 🎓 Education
 
-| Tool | Description | Key params |
-|---|---|---|
-| `start_beginner_tutorial` | Guided tutorial on a topic (intro, candlesticks, portfolio, risk, technicals, fundamentals, Elliott waves, patterns). | `topic` |
-| `get_earnings_calendar` | Upcoming earnings dates for the universe — real, from Finnhub. | — |
-| `analyze_sec_filings` | Open a company's most material SEC filing inline, highlight agent-chosen passages, and return a real risk score + fundamental snapshot. | `symbol`, `highlight?` |
+| Tool                      | Description                                                                                                                             | Key params             |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `start_beginner_tutorial` | Guided tutorial on a topic (intro, candlesticks, portfolio, risk, technicals, fundamentals, Elliott waves, patterns).                   | `topic`                |
+| `get_earnings_calendar`   | Upcoming earnings dates for the universe — real, from Finnhub.                                                                          | —                      |
+| `analyze_sec_filings`     | Open a company's most material SEC filing inline, highlight agent-chosen passages, and return a real risk score + fundamental snapshot. | `symbol`, `highlight?` |
 
 ---
 
@@ -322,7 +327,7 @@ scripts/import-csv-to-supabase.mjs  # One-time CSV → Supabase import
 ## Caveats
 
 - **End-of-day data, no live feed:** prices are the latest close from the imported ~10-year dataset — there's no intraday streaming, so quotes don't tick in real time.
-- **Pattern/Elliott detection is heuristic:** `detect_chart_pattern` and `detect_elliott_wave` read *real* swing structure, but labelling patterns/waves is inherently subjective — treat them as signals, not certainties.
+- **Pattern/Elliott detection is heuristic:** `detect_chart_pattern` and `detect_elliott_wave` read _real_ swing structure, but labelling patterns/waves is inherently subjective — treat them as signals, not certainties.
 - **Not financial advice.** Paper-trading demo only.
 
 ---
