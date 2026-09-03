@@ -20,7 +20,7 @@ import {
   type FilingAnalysis,
   type FilingSignals,
 } from "@/lib/sec-analysis";
-import { pearson, pivotLevels, localSwings, runBacktest } from "@/lib/ta";
+import { pivotLevels, runBacktest } from "@/lib/ta";
 import {
   analyzeComparison,
   detectPatternsForSymbol,
@@ -30,9 +30,7 @@ import {
 } from "@/lib/comparison-analysis";
 import { usePortfolioStore } from "@/lib/portfolio-store";
 import type {
-  ElliottWaveResult,
   ChartPatternType,
-  ElliottWaveType,
   ScreenerResult,
   PortfolioRiskMetrics,
   BacktestResult,
@@ -805,54 +803,6 @@ export const webMcpTools: WebMcpTool[] = [
   },
 
   {
-    name: "get_market_sentiment",
-    category: "Market Data",
-    description:
-      "Return an AI-estimated market sentiment score (0-100) based on price momentum across the universe.",
-    inputSchema: { type: "object", properties: {} },
-    async execute() {
-      const quotes = await getMultipleQuotes(
-        STOCK_UNIVERSE.map((s) => s.symbol),
-      );
-      const avgChange =
-        quotes.reduce((s, q) => s + q.percentChange, 0) / (quotes.length || 1);
-      const bullCount = quotes.filter((q) => q.percentChange > 0).length;
-      const bearCount = quotes.filter((q) => q.percentChange < 0).length;
-      const score = Math.round(50 + avgChange * 5);
-      const clamped = Math.max(0, Math.min(100, score));
-      const label =
-        clamped > 65
-          ? "Greed"
-          : clamped > 55
-            ? "Mild Greed"
-            : clamped < 35
-              ? "Fear"
-              : clamped < 45
-                ? "Mild Fear"
-                : "Neutral";
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                sentimentScore: clamped,
-                label,
-                avgDailyChange: +avgChange.toFixed(3),
-                bullishStocks: bullCount,
-                bearishStocks: bearCount,
-                summary: `Market is showing ${label} sentiment with an average daily move of ${avgChange.toFixed(2)}%.`,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    },
-  },
-
-  {
     name: "get_top_performers",
     category: "Market Data",
     description:
@@ -944,87 +894,6 @@ export const webMcpTools: WebMcpTool[] = [
     },
   },
 
-  {
-    name: "get_correlation",
-    category: "Market Data",
-    description:
-      "Estimate the price correlation between two stocks based on their beta values. Returns a correlation coefficient from -1 to 1.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        symbol1: { type: "string", description: "First ticker" },
-        symbol2: { type: "string", description: "Second ticker" },
-      },
-      required: ["symbol1", "symbol2"],
-    },
-    async execute(params) {
-      const s1 = String(params.symbol1 ?? "").toUpperCase();
-      const s2 = String(params.symbol2 ?? "").toUpperCase();
-      const meta1 = STOCK_UNIVERSE.find((s) => s.symbol === s1);
-      const meta2 = STOCK_UNIVERSE.find((s) => s.symbol === s2);
-      const sector1 = meta1?.sector ?? "Unknown";
-      const sector2 = meta2?.sector ?? "Unknown";
-      const sameSector = sector1 === sector2;
-
-      // Real Pearson correlation of daily returns over the overlapping window.
-      const series = await getLocalOhlcv([s1, s2]);
-      const c1 = series.find((x) => x.symbol === s1)?.candles ?? [];
-      const c2 = series.find((x) => x.symbol === s2)?.candles ?? [];
-      const m1 = new Map(c1.map((c) => [c.date, c.close]));
-      const m2 = new Map(c2.map((c) => [c.date, c.close]));
-      const dates = [...m1.keys()].filter((d) => m2.has(d)).sort();
-      const r1: number[] = [];
-      const r2: number[] = [];
-      for (let i = 1; i < dates.length; i++) {
-        const a0 = m1.get(dates[i - 1])!;
-        const a1 = m1.get(dates[i])!;
-        const b0 = m2.get(dates[i - 1])!;
-        const b1 = m2.get(dates[i])!;
-        if (a0 > 0 && b0 > 0) {
-          r1.push((a1 - a0) / a0);
-          r2.push((b1 - b0) / b0);
-        }
-      }
-      const correlation = +pearson(r1, r2).toFixed(3);
-      const label =
-        correlation > 0.7
-          ? "High positive"
-          : correlation > 0.4
-            ? "Moderate positive"
-            : correlation > 0
-              ? "Low positive"
-              : correlation > -0.4
-                ? "Low negative"
-                : "High negative";
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                symbol1: s1,
-                symbol2: s2,
-                correlation,
-                label,
-                sampleDays: r1.length,
-                sector1,
-                sector2,
-                sameSector,
-                method: "Pearson correlation of daily returns from historical closes.",
-                interpretation:
-                  r1.length < 20
-                    ? `Not enough overlapping history to compute a reliable correlation for ${s1} and ${s2}.`
-                    : `${s1} and ${s2} have ${label.toLowerCase()} correlation (r=${correlation}) over ${r1.length} trading days. ${sameSector ? "Same sector." : "Different sectors — better for diversification."}`,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    },
-  },
-
   // ─── CHART PATTERN DETECTION ──────────────────────────────────────────────────
   {
     name: "detect_chart_pattern",
@@ -1040,13 +909,30 @@ export const webMcpTools: WebMcpTool[] = [
             "Pattern to detect (e.g. head_and_shoulders, xabcd, cypher)",
         },
       },
-      required: ["symbol", "pattern"],
+      required: ["pattern"],
     },
     async execute(params) {
-      const symbol = String(params.symbol ?? "").toUpperCase();
+      const currentUrl =
+        typeof window !== "undefined" ? new URL(window.location.href) : null;
+      const openedSymbol =
+        currentUrl?.pathname.match(/^\/stock\/([^/]+)/i)?.[1]?.toUpperCase() ??
+        currentUrl?.searchParams.get("symbol")?.toUpperCase();
+      const symbol = String(params.symbol ?? openedSymbol ?? "").toUpperCase();
       const pattern = String(
         params.pattern ?? "",
       ).toLowerCase() as ChartPatternType;
+      if (!symbol) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: "Symbol is required when no stock page is currently open.",
+              }),
+            },
+          ],
+        };
+      }
       const validPatterns: ChartPatternType[] = [
         "head_and_shoulders",
         "inverse_head_and_shoulders",
@@ -1077,8 +963,50 @@ export const webMcpTools: WebMcpTool[] = [
       const detected = detectPatternsForSymbol(symbol, candles);
       const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
       const wanted = norm(pattern);
+      const aliases: Record<string, string[]> = {
+        headandshoulders: ["headshoulders"],
+        inverseheadandshoulders: ["inverseheadshoulders"],
+        triangleascending: ["ascendingtriangle"],
+        triangledescending: ["descendingtriangle"],
+        trianglesymmetrical: ["symmetricaltriangle"],
+        doubletop: ["doubletop"],
+        doublebottom: ["doublebottom"],
+      };
       const match =
-        detected.find((p) => norm(p.name).includes(wanted) || wanted.includes(norm(p.name))) ?? null;
+        detected.find((p) => {
+          const detectedName = norm(p.name);
+          const candidates = [wanted, ...(aliases[wanted] ?? [])];
+          return candidates.some(
+            (candidate) =>
+              detectedName.includes(candidate) || candidate.includes(detectedName),
+          );
+        }) ?? null;
+      if (match && typeof window !== "undefined") {
+        const detail = {
+          symbol,
+          style: "candles",
+          drawings: match.drawings,
+        };
+        if (window.location.pathname !== "/compare") {
+          sessionStorage.setItem(
+            "stockpilot:pending-compare-sync",
+            JSON.stringify({
+              symbols: [symbol],
+              focusSymbol: symbol,
+              chartStyle: "candles",
+              drawings: match.drawings,
+              clearDrawings: true,
+            }),
+          );
+          window.location.href = `/compare?symbols=${encodeURIComponent(symbol)}`;
+        } else {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
+              detail,
+            }),
+          );
+        }
+      }
       return {
         content: [
           {
@@ -1110,93 +1038,6 @@ export const webMcpTools: WebMcpTool[] = [
             ),
           },
         ],
-      };
-    },
-  },
-
-  {
-    name: "detect_elliott_wave",
-    category: "Chart Patterns",
-    description: `Detect Elliott Wave structures on a stock chart. Types: impulse_12345 (1-2-3-4-5), correction_abc (A-B-C), triangle_abcde (A-B-C-D-E), double_combo_wxy (W-X-Y), triple_combo_wxyxz (W-X-Y-X-Z).`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        symbol: { type: "string", description: "Ticker symbol to analyze" },
-        wave_type: {
-          type: "string",
-          description:
-            "Wave type: impulse_12345 | correction_abc | triangle_abcde | double_combo_wxy | triple_combo_wxyxz",
-        },
-      },
-      required: ["symbol", "wave_type"],
-    },
-    async execute(params) {
-      const symbol = String(params.symbol ?? "").toUpperCase();
-      const waveType = String(
-        params.wave_type ?? "",
-      ).toLowerCase() as ElliottWaveType;
-      const validWaves: ElliottWaveType[] = [
-        "impulse_12345",
-        "correction_abc",
-        "triangle_abcde",
-        "double_combo_wxy",
-        "triple_combo_wxyxz",
-      ];
-      if (!validWaves.includes(waveType)) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: `Unknown wave type '${waveType}'. Valid: ${validWaves.join(", ")}`,
-              }),
-            },
-          ],
-        };
-      }
-      const series = await getLocalOhlcv([symbol]);
-      const candles = series[0]?.candles ?? [];
-      const closes = candles.map((c) => c.close);
-      const window = Math.max(3, Math.floor(closes.length / 40));
-      const swings = localSwings(closes, window);
-      const labelsByType: Record<ElliottWaveType, string[]> = {
-        impulse_12345: ["Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5"],
-        correction_abc: ["Wave A", "Wave B", "Wave C"],
-        triangle_abcde: ["Wave A", "Wave B", "Wave C", "Wave D", "Wave E"],
-        double_combo_wxy: ["Wave W", "Wave X", "Wave Y"],
-        triple_combo_wxyxz: ["Wave W", "Wave X", "Wave Y", "Wave X2", "Wave Z"],
-      };
-      const labels = labelsByType[waveType];
-      const chosen = swings.slice(-labels.length);
-      const waves = labels.map((label, i) => {
-        const sw = chosen[i];
-        return {
-          label,
-          priceLevel: sw ? +sw.price.toFixed(2) : 0,
-          description: sw
-            ? `${sw.type === "high" ? "Swing high" : "Swing low"} from real price action`
-            : "Insufficient swing data",
-        };
-      });
-      const confidence = Math.round(Math.min(90, (chosen.length / labels.length) * 80 + 10));
-      const lastPrice = closes[closes.length - 1] ?? 0;
-      const firstWave = waves[0]?.priceLevel ?? lastPrice;
-      const projectedTarget =
-        firstWave > 0
-          ? +(lastPrice * (1 + ((lastPrice - firstWave) / firstWave) * 0.5)).toFixed(2)
-          : null;
-      const result: ElliottWaveResult = {
-        symbol,
-        waveType,
-        confidence,
-        currentWave: waves[waves.length - 1]?.label ?? labels[labels.length - 1],
-        description: `Elliott ${waveType} labelled onto the ${chosen.length} most recent swing pivots detected in ${symbol}'s real price history. Wave labelling is heuristic; pivot prices are actual.`,
-        waves,
-        projectedTarget,
-        detectedAt: new Date().toISOString(),
-      };
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
     },
   },
@@ -1803,69 +1644,6 @@ export const webMcpTools: WebMcpTool[] = [
   },
 
   {
-    name: "rebalance_portfolio",
-    category: "Portfolio",
-    description:
-      "Suggest rebalancing actions to equalize holdings or match a target equal-weight allocation.",
-    inputSchema: { type: "object", properties: {} },
-    async execute() {
-      const state = usePortfolioStore.getState();
-      if (state.holdings.length < 2) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "Need at least 2 holdings to suggest rebalancing.",
-              }),
-            },
-          ],
-        };
-      }
-      const quotes = await getMultipleQuotes(
-        state.holdings.map((h) => h.symbol),
-      );
-      const priceMap = new Map(quotes.map((q) => [q.symbol, q.price]));
-      const holdingValues = state.holdings.map((h) => ({
-        symbol: h.symbol,
-        quantity: h.quantity,
-        value: (priceMap.get(h.symbol) ?? h.averageBuyPrice) * h.quantity,
-        currentPrice: priceMap.get(h.symbol) ?? h.averageBuyPrice,
-      }));
-      const totalValue = holdingValues.reduce((s, h) => s + h.value, 0);
-      const targetValue = totalValue / state.holdings.length;
-      const actions = holdingValues.map((h) => {
-        const diff = h.value - targetValue;
-        const sharesToAdjust = Math.floor(Math.abs(diff) / h.currentPrice);
-        return {
-          symbol: h.symbol,
-          currentValue: +h.value.toFixed(2),
-          targetValue: +targetValue.toFixed(2),
-          action: diff > 0 ? "sell" : "buy",
-          sharesToAdjust,
-          estimatedDiff: +Math.abs(diff).toFixed(2),
-        };
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                totalPortfolioValue: +totalValue.toFixed(2),
-                equalWeightTarget: +targetValue.toFixed(2),
-                rebalancingActions: actions,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    },
-  },
-
-  {
     name: "calculate_position_size",
     category: "Portfolio",
     description:
@@ -1937,57 +1715,6 @@ export const webMcpTools: WebMcpTool[] = [
   },
 
   {
-    name: "calculate_profit_loss",
-    category: "Portfolio",
-    description:
-      "Calculate the P&L for a position given an entry price, current price, and quantity.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        symbol: { type: "string", description: "Ticker symbol" },
-        entry_price: {
-          type: "number",
-          description: "Price at which you bought",
-        },
-        quantity: { type: "number", description: "Number of shares held" },
-      },
-      required: ["symbol", "entry_price", "quantity"],
-    },
-    async execute(params) {
-      const symbol = String(params.symbol ?? "").toUpperCase();
-      const entryPrice = Number(params.entry_price ?? 0);
-      const qty = Number(params.quantity ?? 0);
-      const quote = await getStockQuote(symbol);
-      const currentPrice = quote?.price ?? entryPrice;
-      const pnl = (currentPrice - entryPrice) * qty;
-      const pnlPct =
-        entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                symbol,
-                entryPrice,
-                currentPrice,
-                quantity: qty,
-                costBasis: +(entryPrice * qty).toFixed(2),
-                currentValue: +(currentPrice * qty).toFixed(2),
-                pnl: +pnl.toFixed(2),
-                pnlPercent: +pnlPct.toFixed(2),
-                status: pnl >= 0 ? "profit" : "loss",
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    },
-  },
-
-  {
     name: "suggest_diversification",
     category: "Portfolio",
     description:
@@ -2029,29 +1756,6 @@ export const webMcpTools: WebMcpTool[] = [
               null,
               2,
             ),
-          },
-        ],
-      };
-    },
-  },
-
-  {
-    name: "reset_portfolio",
-    category: "Portfolio",
-    description:
-      "Reset the virtual portfolio to the starting $100,000 balance, clearing all holdings and transactions.",
-    inputSchema: { type: "object", properties: {} },
-    async execute() {
-      usePortfolioStore.getState().resetPortfolio();
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              message:
-                "Portfolio reset to $100,000 virtual balance. All holdings and transactions cleared.",
-            }),
           },
         ],
       };
@@ -2407,49 +2111,6 @@ export const webMcpTools: WebMcpTool[] = [
   },
 
   {
-    name: "open_stock",
-    category: "Navigation",
-    description:
-      "Navigate directly to a stock's detail page with its live chart, profile, and buy/sell controls.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        symbol: { type: "string", description: "Ticker symbol to open" },
-      },
-      required: ["symbol"],
-    },
-    async execute(params) {
-      const symbol = String(params.symbol ?? "").toUpperCase();
-      if (!symbol)
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                success: false,
-                message: "Symbol is required.",
-              }),
-            },
-          ],
-        };
-      if (typeof window !== "undefined")
-        window.location.href = `/stock/${symbol}`;
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              success: true,
-              message: `Opening ${symbol} stock page...`,
-              path: `/stock/${symbol}`,
-            }),
-          },
-        ],
-      };
-    },
-  },
-
-  {
     name: "open_compare",
     category: "Navigation",
     description:
@@ -2626,13 +2287,20 @@ export const webMcpTools: WebMcpTool[] = [
       },
     },
     async execute(params) {
+      const currentUrl =
+        typeof window !== "undefined" ? new URL(window.location.href) : null;
+      const openedSymbol =
+        currentUrl?.pathname.match(/^\/stock\/([^/]+)/i)?.[1]?.toUpperCase() ??
+        currentUrl?.searchParams.get("symbol")?.toUpperCase();
       const symbols = Array.isArray(params.symbols) && params.symbols.length > 0
         ? params.symbols.map((s) => String(s).toUpperCase())
-        : ["AAPL", "MSFT"];
+        : openedSymbol
+          ? [openedSymbol]
+          : ["AAPL", "MSFT"];
 
       let focusSymbol = params.focusSymbol
         ? String(params.focusSymbol).toUpperCase()
-        : symbols[0] || "AAPL";
+        : openedSymbol || symbols[0] || "AAPL";
 
       let chartStyle = (params.chartStyle as ComparisonChartStyle) || "candles";
       const range = (params.range as string) || "1Y";
@@ -2704,26 +2372,29 @@ export const webMcpTools: WebMcpTool[] = [
 
       // 4. Dispatch unified event to UI if running in browser
       if (typeof window !== "undefined") {
+        const detail = {
+          chartStyle,
+          symbols,
+          focusSymbol,
+          range,
+          normalized,
+          indicators,
+          drawings,
+          clearDrawings,
+        };
         if (window.location.pathname !== "/compare") {
+          sessionStorage.setItem(
+            "stockpilot:pending-compare-sync",
+            JSON.stringify(detail),
+          );
           const query = new URLSearchParams();
           if (symbols.length) query.set("symbols", symbols.join(","));
           window.location.href = `/compare?${query.toString()}`;
+        } else {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:compare:sync", { detail }),
+          );
         }
-
-        window.dispatchEvent(
-          new CustomEvent("stockpilot:compare:sync", {
-            detail: {
-              chartStyle,
-              symbols,
-              focusSymbol,
-              range,
-              normalized,
-              indicators,
-              drawings,
-              clearDrawings,
-            },
-          }),
-        );
       }
 
       // 5. Build clean, descriptive output

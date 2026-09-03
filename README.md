@@ -206,32 +206,29 @@ so a human and an agent share one live view.
 
 ## WebMCP tool reference
 
-Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `document.modelContext.registerTool(...)`. Each returns a `{ content: [{ type: "text", text: "<JSON>" }] }` payload. **42 tools across 8 categories**, all computed from real Supabase / Finnhub data.
+Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `document.modelContext.registerTool(...)`. Each returns a `{ content: [{ type: "text", text: "<JSON>" }] }` payload. **35 tools across 8 categories**, all computed from real Supabase / Finnhub data.
 
 ### 📈 Market Data
 
-| Tool                      | Description                                                        | Key params                                                                              |
-| ------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `search_stock`            | Search the curated stock universe by symbol or company name.       | `query`                                                                                 |
-| `get_stock_details`       | Full quote + company profile + metadata for a ticker.              | `symbol`                                                                                |
-| `get_stock_news`          | Latest news articles for a stock.                                  | `symbol`, `days?`                                                                       |
-| `get_market_news_summary` | Digest of general market news.                                     | `category?` (`general\|forex\|crypto\|merger`)                                          |
-| `rank_stocks`             | Rank the universe by a metric.                                     | `metric` (`performance\|volume\|price`), `limit?`                                       |
-| `screen_stocks`           | Filter stocks by price/%-change/sector.                            | `minPrice?`, `maxPrice?`, `minPercentChange?`, `maxPercentChange?`, `sector?`, `limit?` |
-| `get_sector_performance`  | Average performance by sector.                                     | —                                                                                       |
-| `get_market_sentiment`    | Fear/Greed-style sentiment score (0–100) from price momentum.      | —                                                                                       |
-| `get_top_performers`      | Top N gainers or losers.                                           | `limit?`, `direction?` (`gainers\|losers`)                                              |
-| `compare_stocks`          | Compare 2–5 stocks side by side.                                   | `symbols[]`                                                                             |
-| `get_correlation`         | Estimated price correlation between two stocks (from beta/sector). | `symbol1`, `symbol2`                                                                    |
+| Tool                      | Description                                                  | Key params                                                                              |
+| ------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `search_stock`            | Search the curated stock universe by symbol or company name. | `query`                                                                                 |
+| `get_stock_details`       | Full quote + company profile + metadata for a ticker.        | `symbol`                                                                                |
+| `get_stock_news`          | Latest news articles for a stock.                            | `symbol`, `days?`                                                                       |
+| `get_market_news_summary` | Digest of general market news.                               | `category?` (`general\|forex\|crypto\|merger`)                                          |
+| `rank_stocks`             | Rank the universe by a metric.                               | `metric` (`performance\|volume\|price`), `limit?`                                       |
+| `screen_stocks`           | Filter stocks by price/%-change/sector.                      | `minPrice?`, `maxPrice?`, `minPercentChange?`, `maxPercentChange?`, `sector?`, `limit?` |
+| `get_sector_performance`  | Average performance by sector.                               | —                                                                                       |
+| `get_top_performers`      | Top N gainers or losers.                                     | `limit?`, `direction?` (`gainers\|losers`)                                              |
+| `compare_stocks`          | Compare 2–5 stocks side by side.                             | `symbols[]`                                                                             |
 
 ### 🧩 Chart Patterns
 
-| Tool                     | Description                                                                                                        | Key params            |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------- |
-| `detect_chart_pattern`   | Detect a technical pattern (head & shoulders, ABCD, XABCD, cypher, triangles, double top/bottom, three drives, …). | `symbol`, `pattern`   |
-| `detect_elliott_wave`    | Detect an Elliott Wave structure (impulse 1-2-3-4-5, ABC, triangle, WXY, WXYXZ).                                   | `symbol`, `wave_type` |
-| `get_support_resistance` | Compute S1–S3 / R1–R3 levels and pivot.                                                                            | `symbol`              |
-| `get_trend_direction`    | Uptrend / Downtrend / Sideways with strength + advice.                                                             | `symbol`              |
+| Tool                     | Description                                                                                                        | Key params          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| `detect_chart_pattern`   | Detect a technical pattern (head & shoulders, ABCD, XABCD, cypher, triangles, double top/bottom, three drives, …). | `symbol`, `pattern` |
+| `get_support_resistance` | Compute S1–S3 / R1–R3 levels and pivot.                                                                            | `symbol`            |
+| `get_trend_direction`    | Uptrend / Downtrend / Sideways with strength + advice.                                                             | `symbol`            |
 
 ### 💼 Portfolio
 
@@ -244,11 +241,8 @@ Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `docume
 | `sell_stock`              | Simulate selling shares.                                               | `symbol`, `quantity`                                                                     |
 | `auto_invest`             | Spread a budget across stocks by strategy.                             | `budget`, `strategy` (`momentum\|diversified\|conservative\|aggressive`), `stock_count?` |
 | `optimize_portfolio`      | Suggest an allocation for a budget + risk level.                       | `budget`, `risk_level?`                                                                  |
-| `rebalance_portfolio`     | Suggest actions to equal-weight holdings.                              | —                                                                                        |
 | `calculate_position_size` | Position size from account risk % and stop-loss.                       | `symbol`, `risk_percent`, `stop_loss_price`                                              |
-| `calculate_profit_loss`   | P&L for a position given entry price + quantity.                       | `symbol`, `entry_price`, `quantity`                                                      |
 | `suggest_diversification` | Suggest stocks in sectors you don't hold.                              | —                                                                                        |
-| `reset_portfolio`         | Reset to the starting $100,000 balance.                                | —                                                                                        |
 
 ### 🔔 Watchlist & Alerts
 
@@ -271,7 +265,6 @@ Tools are defined in [`lib/webmcp.ts`](lib/webmcp.ts) and registered via `docume
 | Tool           | Description                                   | Key params   |
 | -------------- | --------------------------------------------- | ------------ |
 | `navigate_to`  | Navigate to any StockPilot page.              | `path`       |
-| `open_stock`   | Open a stock's detail page.                   | `symbol`     |
 | `open_compare` | Open the compare page, optionally pre-filled. | `symbols?[]` |
 
 ---
@@ -319,7 +312,7 @@ scripts/import-csv-to-supabase.mjs  # One-time CSV → Supabase import
 ## Caveats
 
 - **End-of-day data, no live feed:** prices are the latest close from the imported ~10-year dataset — there's no intraday streaming, so quotes don't tick in real time.
-- **Pattern/Elliott detection is heuristic:** `detect_chart_pattern` and `detect_elliott_wave` read _real_ swing structure, but labelling patterns/waves is inherently subjective — treat them as signals, not certainties.
+- **Pattern detection is heuristic:** `detect_chart_pattern` reads _real_ swing structure, but labelling patterns is inherently subjective — treat it as a signal, not certainty.
 - **Not financial advice.** Paper-trading demo only.
 
 ---

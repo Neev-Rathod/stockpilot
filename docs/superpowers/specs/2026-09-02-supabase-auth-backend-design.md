@@ -15,6 +15,7 @@ Turn the StockPilot hackathon demo into a real, working, database-backed app:
 This phase is the **backbone only**. Making the WebMCP analysis tools compute from real data is explicitly deferred to a fast-follow.
 
 ### Goals
+
 - Users can sign up / log in with email + password.
 - Stock prices, charts, and history reflect the real imported CSV data.
 - Portfolio, watchlist, and alerts persist per-user in Supabase and survive across sessions/devices.
@@ -22,14 +23,16 @@ This phase is the **backbone only**. Making the WebMCP analysis tools compute fr
 - The app is self-contained: no external market API required at runtime.
 
 ### Non-goals (this phase)
+
 - Real-time / live price feed (Finnhub WebSocket or polling). Prices are the latest CSV close + cosmetic drift.
-- Making analysis tools real (`detect_chart_pattern`, `detect_elliott_wave`, `backtest_strategy`, `get_support_resistance`, `get_correlation`, `get_earnings_calendar` stay seeded).
+- Making analysis tools real (`detect_chart_pattern`, `backtest_strategy`, `get_support_resistance`, `get_earnings_calendar` stay seeded).
 - OAuth / social login.
 - Any change to SEC-filings or WebMCP code (see Constraints).
 
 ## 2. Hard constraints
 
 **Do NOT modify these files/folders** (explicit user rule):
+
 - `lib/webmcp.ts`
 - `components/webmcp-panel.tsx`
 - `app/sec-filings/`
@@ -37,8 +40,9 @@ This phase is the **backbone only**. Making the WebMCP analysis tools compute fr
 - `components/stocks/sec-filings-panel.tsx`
 
 Design consequences:
+
 - The WebMCP tools call `usePortfolioStore.getState().buyStock(...)` (and `sellStock`, `toggleFavorite`, `setAlert`) **synchronously** and use the return value immediately. Therefore the store's method signatures **must stay synchronous and return the same `{ success, message }` shape**. Persistence to Supabase happens as a **background (fire-and-forget) write-through** after the synchronous optimistic local update.
-- The WebMCP tools call `getStockQuote` / `getMultipleQuotes` from `lib/finnhub/client.ts`. We swap the *internals* of those functions to read from Supabase. The file `lib/finnhub/client.ts` is NOT off-limits, so this is allowed and requires no change to `webmcp.ts`.
+- The WebMCP tools call `getStockQuote` / `getMultipleQuotes` from `lib/finnhub/client.ts`. We swap the _internals_ of those functions to read from Supabase. The file `lib/finnhub/client.ts` is NOT off-limits, so this is allowed and requires no change to `webmcp.ts`.
 - The pre-existing SSRF issue in `app/api/sec/report/route.ts` is out of scope (folder is off-limits).
 
 ## 3. Architecture & data flow
@@ -74,6 +78,7 @@ Design consequences:
 All tables created via a SQL migration in `supabase/migrations/`. Row-Level Security enabled on every table.
 
 ### Public-read reference data (readable by `anon` + `authenticated`)
+
 ```sql
 create table stocks (
   symbol      text primary key,
@@ -103,6 +108,7 @@ create policy "public read stock_prices" on stock_prices for select using (true)
 ```
 
 ### Per-user data (RLS scoped to `auth.uid()`)
+
 ```sql
 create table profiles (
   id              uuid primary key references auth.users(id) on delete cascade,
@@ -150,6 +156,7 @@ create table price_alerts (
 ```
 
 RLS policies for each per-user table follow the same pattern:
+
 ```sql
 alter table <t> enable row level security;
 create policy "own rows" on <t>
@@ -158,6 +165,7 @@ create policy "own rows" on <t>
 ```
 
 ### Auto-create profile on signup (trigger)
+
 ```sql
 create function public.handle_new_user() returns trigger
   language plpgsql security definer as $$
@@ -183,6 +191,7 @@ create trigger on_auth_user_created
 ## 6. Portfolio store refactor
 
 `lib/portfolio-store.ts`:
+
 - Remove `persist(localStorage)`.
 - Add a `hydrateFromSupabase(userId)` action called after login (loads `profiles.virtual_balance`, `holdings`, `transactions`, `watchlist`, `price_alerts` into the store) and a `clear()` action called on logout.
 - `buyStock` / `sellStock` / `toggleFavorite` / `setAlert` / `removeAlert` / `resetPortfolio` keep their **synchronous** signatures and return shapes. Each:
@@ -193,6 +202,7 @@ create trigger on_auth_user_created
 ## 7. Quote source swap
 
 `lib/finnhub/client.ts`:
+
 - Reimplement `getStockQuote(symbol)` and `getMultipleQuotes(symbols)` to read from Supabase `stock_prices` (latest two rows per symbol) + `stocks` (for `companyName`, currency), instead of calling `/api/finnhub`.
 - Compute `price` (latest close), `previousClose` (prior close), `change`, `percentChange`, `open/high/low` (from the latest row), `volume` (latest row).
 - Unknown symbols (not in the 10-symbol dataset) return `null` / are filtered out — callers already handle empty results gracefully.
@@ -206,7 +216,7 @@ Our dataset has exactly 10 symbols: **AAPL, AMD, AMZN, CSCO, META, MSFT, NFLX, Q
 - `lib/use-market-ticker.ts` `DEFAULT_SYMBOLS` currently lists `ADBE, BTCUSD, EURUSD` etc. → update to the 10 real symbols.
 - `app/page.tsx` ticker switcher lists `NVDA, BTCUSD` (not in dataset) → update to symbols we have.
 - `lib/webmcp.ts` `STOCK_UNIVERSE` references symbols we don't have (GOOGL, NVDA, JPM, V, JNJ, WMT, XOM, BRK.B, UNH, LLY). **This file is off-limits**, so those specific tool calls will return empty/zero quotes. Accepted as a known limitation this phase; revisit in the analysis fast-follow. `getMultipleQuotes` must degrade gracefully (skip unknown symbols) rather than error.
-- `stocks` table seeded with sector metadata for the 10 symbols so sector-based tools that *do* use our symbols still work.
+- `stocks` table seeded with sector metadata for the 10 symbols so sector-based tools that _do_ use our symbols still work.
 
 ## 9. CSV import
 
@@ -217,12 +227,15 @@ Our dataset has exactly 10 symbols: **AAPL, AMD, AMZN, CSCO, META, MSFT, NFLX, Q
 ## 10. Environment & setup (documented for the user)
 
 New `.env` values:
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=...        # from Supabase project settings → API
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...   # public anon key
 SUPABASE_SERVICE_ROLE_KEY=...       # secret; used ONLY by the import script
 ```
+
 Setup order the user runs (with commands provided during implementation):
+
 1. Create/confirm the `StockPilot` cloud project (done).
 2. Disable email confirmation in Auth settings (demo).
 3. Apply the SQL migration (via Supabase SQL editor or CLI).
@@ -250,4 +263,7 @@ New dependencies: `@supabase/supabase-js`, `@supabase/ssr`.
 - **WebMCP symbols without data** return empty quotes (accepted, file off-limits).
 - **Background write-through failures** could drift local vs. server state; mitigated by re-hydration on reload and error toasts. Acceptable for demo.
 - **Service-role key** must never reach the client — used only in the Node import script; documented clearly.
+
+```
+
 ```

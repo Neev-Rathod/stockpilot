@@ -9,7 +9,6 @@ import {
   CalendarDays,
   Newspaper,
   Bot,
-  Sparkles,
   TrendingUp,
   TrendingDown,
   ShieldCheck,
@@ -17,7 +16,6 @@ import {
   Layers,
   CheckCircle2,
   AlertTriangle,
-  Pencil,
   Eye,
   SlidersHorizontal,
   ChevronDown,
@@ -44,7 +42,6 @@ import { getLocalOhlcv, type OhlcvSeries } from "@/lib/ohlcv";
 import {
   analyzeComparison,
   type ComparisonAnalysisResult,
-  type DetectedChartPattern,
 } from "@/lib/comparison-analysis";
 import type { StockRange } from "@/lib/types";
 
@@ -114,7 +111,9 @@ export function CompareDashboard() {
   const [normalized, setNormalized] = useState(false);
   const [newsSymbol, setNewsSymbol] = useState(initialSymbols[0] || "AAPL");
   const [chartStyle, setChartStyle] = useState<ChartStyle>("candles");
-  const [focusSymbol, setFocusSymbol] = useState<string>(initialSymbols[0] || "AAPL");
+  const [focusSymbol, setFocusSymbol] = useState<string>(
+    initialSymbols[0] || "AAPL",
+  );
   const [indicators, setIndicators] = useState<IndicatorState>({
     sma20: false,
     ema50: false,
@@ -125,8 +124,6 @@ export function CompareDashboard() {
   });
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [showAiAnalysis, setShowAiAnalysis] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activePatternId, setActivePatternId] = useState<string | null>(null);
 
   // Sync newsSymbol & focusSymbol if selected list changes
   useEffect(() => {
@@ -173,14 +170,14 @@ export function CompareDashboard() {
             d.indicators.sma !== undefined
               ? Boolean(d.indicators.sma)
               : d.indicators.sma20 !== undefined
-              ? Boolean(d.indicators.sma20)
-              : prev.sma20,
+                ? Boolean(d.indicators.sma20)
+                : prev.sma20,
           ema50:
             d.indicators.ema !== undefined
               ? Boolean(d.indicators.ema)
               : d.indicators.ema50 !== undefined
-              ? Boolean(d.indicators.ema50)
-              : prev.ema50,
+                ? Boolean(d.indicators.ema50)
+                : prev.ema50,
           bollinger:
             d.indicators.bollinger !== undefined
               ? Boolean(d.indicators.bollinger)
@@ -193,8 +190,8 @@ export function CompareDashboard() {
             d.indicators.rsi !== undefined
               ? Boolean(d.indicators.rsi)
               : d.indicators.rsi14 !== undefined
-              ? Boolean(d.indicators.rsi14)
-              : prev.rsi,
+                ? Boolean(d.indicators.rsi14)
+                : prev.rsi,
           macd:
             d.indicators.macd !== undefined
               ? Boolean(d.indicators.macd)
@@ -203,7 +200,6 @@ export function CompareDashboard() {
       }
       if (d.clearDrawings) {
         setDrawings([]);
-        setActivePatternId(null);
       }
       if (Array.isArray(d.drawings)) {
         if (d.clearDrawings) {
@@ -215,6 +211,19 @@ export function CompareDashboard() {
     }
 
     window.addEventListener("stockpilot:compare:sync", handleSync);
+    const pending = sessionStorage.getItem("stockpilot:pending-compare-sync");
+    if (pending) {
+      sessionStorage.removeItem("stockpilot:pending-compare-sync");
+      try {
+        handleSync(
+          new CustomEvent("stockpilot:compare:sync", {
+            detail: JSON.parse(pending),
+          }),
+        );
+      } catch {
+        // Ignore malformed pending tool state.
+      }
+    }
     return () => {
       window.removeEventListener("stockpilot:compare:sync", handleSync);
     };
@@ -289,7 +298,10 @@ export function CompareDashboard() {
     queryFn: async () => {
       const entries = await Promise.all(
         selected.map(async (symbol) => {
-          const fin = await getFinancialsReported({ symbol, freq: "quarterly" });
+          const fin = await getFinancialsReported({
+            symbol,
+            freq: "quarterly",
+          });
           return [symbol, fin] as const;
         }),
       );
@@ -323,9 +335,7 @@ export function CompareDashboard() {
         const first = entry.candles[0];
         const last = entry.candles.at(-1);
         const returnPct =
-          first && last
-            ? ((last.close - first.close) / first.close) * 100
-            : 0;
+          first && last ? ((last.close - first.close) / first.close) * 100 : 0;
         return {
           symbol: entry.symbol,
           price: last?.close ?? 0,
@@ -346,67 +356,12 @@ export function CompareDashboard() {
       current.includes(symbol)
         ? current.filter((item) => item !== symbol)
         : current.length === 5
-        ? [...current.slice(1), symbol]
-        : [...current, symbol],
+          ? [...current.slice(1), symbol]
+          : [...current, symbol],
     );
-  }
-
-  // Draw pattern directly onto the chart overlay canvas
-  function applyPatternToCanvas(pattern: DetectedChartPattern) {
-    setActivePatternId(pattern.id);
-    setFocusSymbol(pattern.symbol);
-    setChartStyle("candles");
-    setDrawings(pattern.drawings);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
-          detail: {
-            symbol: pattern.symbol,
-            style: "candles",
-            drawings: pattern.drawings,
-          },
-        }),
-      );
-    }
-    toast.success(
-      `AI drew "${pattern.name}" on ${pattern.symbol} chart canvas!`,
-    );
-    chartSectionRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }
-
-  function drawAllPatterns() {
-    if (!aiAnalysis?.detectedPatterns.length) return;
-    const allDrawings = aiAnalysis.detectedPatterns.flatMap((p) => p.drawings);
-    const targetSymbol = aiAnalysis.detectedPatterns[0].symbol;
-    setFocusSymbol(targetSymbol);
-    setChartStyle("candles");
-    setDrawings(allDrawings);
-
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
-          detail: {
-            symbol: targetSymbol,
-            style: "candles",
-            drawings: allDrawings,
-          },
-        }),
-      );
-    }
-    toast.success(
-      `Rendered ${allDrawings.length} AI patterns across chart canvas!`,
-    );
-    chartSectionRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
   }
 
   function clearCanvas() {
-    setActivePatternId(null);
     setDrawings([]);
     if (typeof window !== "undefined") {
       window.dispatchEvent(
@@ -423,30 +378,20 @@ export function CompareDashboard() {
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.2em] text-accent">
-              <BarChart3 className="h-4 w-4" /> Multi-Stock Benchmark & AI Intelligence
+              <BarChart3 className="h-4 w-4" /> Multi-Stock Benchmark & AI
+              Intelligence
             </div>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-txt sm:text-4xl">
               Comparative Analysis & Technical Canvas
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-txt-dim">
-              Benchmark closing prices, examine reported financials & recommendation trends, and let AI detect and draw chart patterns directly onto the live canvas.
+              Benchmark closing prices, examine reported financials &
+              recommendation trends, and let AI detect and draw chart patterns
+              directly onto the live canvas.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => {
-                setIsAnalyzing(true);
-                setTimeout(() => setIsAnalyzing(false), 600);
-                setShowAiAnalysis(true);
-                toast.success("Comparative AI analysis updated!");
-              }}
-              className="flex items-center gap-2 rounded-2xl border border-accent bg-accent px-4 py-3 text-xs font-bold text-black shadow-lg shadow-black/30 transition-all hover:bg-accent-hover active:scale-[0.98]"
-            >
-              <Sparkles className={`h-4 w-4 ${isAnalyzing ? "animate-spin" : ""}`} />
-              Run AI Analysis
-            </button>
-
             <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-right">
               <div className="text-[10px] font-bold uppercase tracking-wider text-up">
                 Data Feed
@@ -465,7 +410,8 @@ export function CompareDashboard() {
             </p>
             {aiAnalysis && (
               <span className="text-[11px] text-txt-dim">
-                AI Detected {aiAnalysis.detectedPatterns.length} technical patterns
+                AI Detected {aiAnalysis.detectedPatterns.length} technical
+                patterns
               </span>
             )}
           </div>
@@ -497,12 +443,9 @@ export function CompareDashboard() {
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-txt text-lg">Price Performance & Canvas</h2>
-              {activePatternId && (
-                <span className="rounded-full bg-[color:var(--accent-soft)] border border-[color:var(--accent-soft)] px-2 py-0.5 text-[10px] font-bold text-accent">
-                  AI Pattern Active
-                </span>
-              )}
+              <h2 className="font-bold text-txt text-lg">
+                Price Performance & Canvas
+              </h2>
             </div>
             <p className="mt-1 text-xs text-txt-dim">
               {normalized
@@ -557,7 +500,8 @@ export function CompareDashboard() {
 
         {history.isLoading ? (
           <div className="flex h-[440px] items-center justify-center text-sm text-txt-dim">
-            <RefreshCw className="mr-2 h-4 w-4 animate-spin text-accent" /> Loading local market history…
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin text-accent" />{" "}
+            Loading local market history…
           </div>
         ) : history.isError ? (
           <div className="flex h-[440px] items-center justify-center text-sm text-down">
@@ -592,24 +536,22 @@ export function CompareDashboard() {
                 Multi-Vector Synthesis & Canvas Pattern Detection
               </h2>
               <p className="mt-1 text-xs text-txt-dim">
-                Synthesized across historical OHLCV, Finnhub analyst recommendation trends, reported SEC financials & news.
+                Synthesized across historical OHLCV, Finnhub analyst
+                recommendation trends, reported SEC financials & news.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={drawAllPatterns}
-                className="flex items-center gap-1.5 rounded-xl border border-[color:var(--accent-soft)] bg-[color:var(--accent-soft)] px-3.5 py-2 text-xs font-bold text-accent transition-all hover:bg-[color:var(--accent-soft)] active:scale-[0.98]"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Draw All Patterns on Chart
-              </button>
-              <button
                 onClick={() => setShowAiAnalysis((v) => !v)}
                 className="rounded-xl border border-hairline/[0.08] bg-elevated p-2 text-txt-dim hover:text-txt"
                 title={showAiAnalysis ? "Collapse" : "Expand"}
               >
-                {showAiAnalysis ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {showAiAnalysis ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
               </button>
             </div>
           </div>
@@ -644,7 +586,8 @@ export function CompareDashboard() {
                     {aiAnalysis.aiVerdict.growthWinner}
                   </div>
                   <p className="mt-1 text-xs text-txt-dim leading-relaxed">
-                    Delivered the highest absolute price appreciation over the selected period.
+                    Delivered the highest absolute price appreciation over the
+                    selected period.
                   </p>
                 </div>
 
@@ -659,7 +602,8 @@ export function CompareDashboard() {
                     {aiAnalysis.aiVerdict.valueOrDefensiveWinner}
                   </div>
                   <p className="mt-1 text-xs text-txt-dim leading-relaxed">
-                    Lowest annualized volatility; best suited for downside risk mitigation.
+                    Lowest annualized volatility; best suited for downside risk
+                    mitigation.
                   </p>
                 </div>
               </div>
@@ -682,7 +626,10 @@ export function CompareDashboard() {
                       <tr className="border-b border-hairline/[0.08] text-[10px] font-bold uppercase tracking-wider text-txt-dim bg-accent/[0.02]">
                         <th className="py-3 px-4">Metric</th>
                         {aiAnalysis.metrics.map((m) => (
-                          <th key={m.symbol} className="py-3 px-4 font-mono text-sm text-txt">
+                          <th
+                            key={m.symbol}
+                            className="py-3 px-4 font-mono text-sm text-txt"
+                          >
                             {m.symbol}
                           </th>
                         ))}
@@ -691,9 +638,14 @@ export function CompareDashboard() {
                     <tbody className="divide-y divide-hairline/[0.05]">
                       {/* Price */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">Last Close</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          Last Close
+                        </td>
                         {aiAnalysis.metrics.map((m) => (
-                          <td key={m.symbol} className="py-3 px-4 font-mono text-txt">
+                          <td
+                            key={m.symbol}
+                            className="py-3 px-4 font-mono text-txt"
+                          >
                             ${m.price.toFixed(2)}
                           </td>
                         ))}
@@ -701,9 +653,12 @@ export function CompareDashboard() {
 
                       {/* Period Return */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">Period Return</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          Period Return
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
-                          const isLead = m.symbol === aiAnalysis.matrixLeaders.highestReturn;
+                          const isLead =
+                            m.symbol === aiAnalysis.matrixLeaders.highestReturn;
                           return (
                             <td
                               key={m.symbol}
@@ -727,11 +682,18 @@ export function CompareDashboard() {
 
                       {/* Volatility */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">Annualized Volatility</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          Annualized Volatility
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
-                          const isLead = m.symbol === aiAnalysis.matrixLeaders.lowestVolatility;
+                          const isLead =
+                            m.symbol ===
+                            aiAnalysis.matrixLeaders.lowestVolatility;
                           return (
-                            <td key={m.symbol} className="py-3 px-4 font-mono text-txt-dim">
+                            <td
+                              key={m.symbol}
+                              className="py-3 px-4 font-mono text-txt-dim"
+                            >
                               <div className="flex items-center gap-1.5">
                                 {m.volatility.toFixed(1)}%
                                 {isLead && (
@@ -747,11 +709,17 @@ export function CompareDashboard() {
 
                       {/* Sharpe */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">Sharpe Ratio (4% Rf)</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          Sharpe Ratio (4% Rf)
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
-                          const isLead = m.symbol === aiAnalysis.matrixLeaders.bestSharpe;
+                          const isLead =
+                            m.symbol === aiAnalysis.matrixLeaders.bestSharpe;
                           return (
-                            <td key={m.symbol} className="py-3 px-4 font-mono text-txt">
+                            <td
+                              key={m.symbol}
+                              className="py-3 px-4 font-mono text-txt"
+                            >
                               <div className="flex items-center gap-1.5">
                                 {m.sharpeRatio.toFixed(2)}
                                 {isLead && (
@@ -767,9 +735,13 @@ export function CompareDashboard() {
 
                       {/* Technical Health */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">Technical Health</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          Technical Health
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
-                          const isLead = m.symbol === aiAnalysis.matrixLeaders.highestTechnicalHealth;
+                          const isLead =
+                            m.symbol ===
+                            aiAnalysis.matrixLeaders.highestTechnicalHealth;
                           return (
                             <td key={m.symbol} className="py-3 px-4">
                               <div className="flex items-center gap-2">
@@ -779,13 +751,15 @@ export function CompareDashboard() {
                                       m.technicalHealth >= 70
                                         ? "bg-emerald-400"
                                         : m.technicalHealth >= 45
-                                        ? "bg-accent"
-                                        : "bg-rose-400"
+                                          ? "bg-accent"
+                                          : "bg-rose-400"
                                     }`}
                                     style={{ width: `${m.technicalHealth}%` }}
                                   />
                                 </div>
-                                <span className="font-mono text-txt">{m.technicalHealth}/100</span>
+                                <span className="font-mono text-txt">
+                                  {m.technicalHealth}/100
+                                </span>
                                 {isLead && (
                                   <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-up">
                                     Top
@@ -799,25 +773,32 @@ export function CompareDashboard() {
 
                       {/* Analyst Consensus */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">Analyst Consensus</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          Analyst Consensus
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
                           const rec = m.analystConsensus;
                           if (!rec) {
                             return (
-                              <td key={m.symbol} className="py-3 px-4 text-txt-mute">
+                              <td
+                                key={m.symbol}
+                                className="py-3 px-4 text-txt-mute"
+                              >
                                 N/A
                               </td>
                             );
                           }
-                          const isLead = m.symbol === aiAnalysis.matrixLeaders.strongestAnalystConsensus;
+                          const isLead =
+                            m.symbol ===
+                            aiAnalysis.matrixLeaders.strongestAnalystConsensus;
                           return (
                             <td key={m.symbol} className="py-3 px-4">
                               <div className="flex items-center gap-1.5 font-bold text-txt">
                                 {rec.consensusScore >= 4
                                   ? "Strong Buy"
                                   : rec.consensusScore >= 3.5
-                                  ? "Buy"
-                                  : "Hold"}{" "}
+                                    ? "Buy"
+                                    : "Hold"}{" "}
                                 ({rec.consensusScore.toFixed(1)}/5)
                                 {isLead && (
                                   <span className="rounded bg-emerald-400/20 px-1 py-0.5 text-[9px] uppercase font-bold text-up">
@@ -826,7 +807,8 @@ export function CompareDashboard() {
                                 )}
                               </div>
                               <div className="text-[10px] text-txt-dim mt-0.5">
-                                {rec.bullishRatio}% Bullish ({rec.total} analysts)
+                                {rec.bullishRatio}% Bullish ({rec.total}{" "}
+                                analysts)
                               </div>
                             </td>
                           );
@@ -835,12 +817,17 @@ export function CompareDashboard() {
 
                       {/* Reported Financials */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">SEC Reported Filing</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          SEC Reported Filing
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
                           const fin = m.reportedFinancials;
                           if (!fin || !fin.hasData) {
                             return (
-                              <td key={m.symbol} className="py-3 px-4 text-txt-mute">
+                              <td
+                                key={m.symbol}
+                                className="py-3 px-4 text-txt-mute"
+                              >
                                 Standard SEC Filing
                               </td>
                             );
@@ -862,7 +849,9 @@ export function CompareDashboard() {
 
                       {/* News Sentiment */}
                       <tr>
-                        <td className="py-3 px-4 font-semibold text-txt-dim">News Sentiment</td>
+                        <td className="py-3 px-4 font-semibold text-txt-dim">
+                          News Sentiment
+                        </td>
                         {aiAnalysis.metrics.map((m) => {
                           const score = m.newsSummary.sentimentScore;
                           return (
@@ -872,11 +861,15 @@ export function CompareDashboard() {
                                   score > 0.15
                                     ? "bg-emerald-400/20 text-up"
                                     : score < -0.15
-                                    ? "bg-rose-400/20 text-down"
-                                    : "bg-elevated text-txt-dim"
+                                      ? "bg-rose-400/20 text-down"
+                                      : "bg-elevated text-txt-dim"
                                 }`}
                               >
-                                {score > 0.15 ? "Bullish" : score < -0.15 ? "Bearish" : "Neutral"}
+                                {score > 0.15
+                                  ? "Bullish"
+                                  : score < -0.15
+                                    ? "Bearish"
+                                    : "Neutral"}
                               </span>
                             </td>
                           );
@@ -885,102 +878,6 @@ export function CompareDashboard() {
                     </tbody>
                   </table>
                 </div>
-              </div>
-
-              {/* Detected Chart Patterns with One-Click Canvas Drawing */}
-              <div>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-txt flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-accent" />
-                      Detected Technical Patterns (Interactive Canvas Overlays)
-                    </h3>
-                    <p className="text-xs text-txt-dim mt-0.5">
-                      Click any pattern to focus that company and draw the exact geometric coordinates directly onto the chart overlay!
-                    </p>
-                  </div>
-                  <button
-                    onClick={drawAllPatterns}
-                    className="text-xs font-bold text-accent hover:text-accent hover:underline"
-                  >
-                    Draw all {aiAnalysis.detectedPatterns.length} patterns
-                  </button>
-                </div>
-
-                {aiAnalysis.detectedPatterns.length === 0 ? (
-                  <div className="rounded-2xl border border-hairline/[0.08] bg-elevated p-6 text-center text-xs text-txt-dim">
-                    No clear geometric patterns detected within the current range threshold. Switch to 6M or 1Y for richer swing data.
-                  </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {aiAnalysis.detectedPatterns.map((pattern) => (
-                      <div
-                        key={pattern.id}
-                        className={`group relative rounded-2xl border p-4 transition-all ${
-                          activePatternId === pattern.id
-                            ? "border-accent bg-[color:var(--accent-soft)] shadow-lg shadow-amber-500/10"
-                            : "border-hairline/[0.08] bg-elevated hover:border-hairline-strong hover:bg-accent/[0.03]"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-black uppercase text-accent">
-                            {pattern.symbol}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                pattern.direction === "bullish"
-                                  ? "bg-emerald-400/20 text-up"
-                                  : pattern.direction === "bearish"
-                                  ? "bg-rose-400/20 text-down"
-                                  : "bg-elevated text-txt-dim"
-                              }`}
-                            >
-                              {pattern.direction}
-                            </span>
-                            <span className="rounded bg-accent/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-txt-dim">
-                              {pattern.confidence}%
-                            </span>
-                          </div>
-                        </div>
-
-                        <h4 className="mt-2 text-sm font-bold text-txt group-hover:text-accent transition-colors">
-                          {pattern.name}
-                        </h4>
-                        <p className="mt-1 text-xs text-txt-dim line-clamp-3 leading-relaxed">
-                          {pattern.rationale}
-                        </p>
-
-                        {(pattern.targetPrice || pattern.entryPrice) && (
-                          <div className="mt-3 flex items-center justify-between border-t border-hairline/[0.06] pt-2 text-[11px]">
-                            {pattern.entryPrice && (
-                              <span className="text-txt-dim">
-                                Entry: <strong className="text-txt">${pattern.entryPrice.toFixed(2)}</strong>
-                              </span>
-                            )}
-                            {pattern.targetPrice && (
-                              <span className="text-up font-semibold">
-                                Target: ${pattern.targetPrice.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => applyPatternToCanvas(pattern)}
-                          className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-bold transition-all ${
-                            activePatternId === pattern.id
-                              ? "border-accent bg-accent text-black shadow-md"
-                              : "border-hairline-strong bg-[color:var(--accent-soft)] text-accent hover:bg-accent hover:text-txt"
-                          }`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          {activePatternId === pattern.id ? "Drawn on Chart Canvas" : "Draw on Chart Canvas"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {/* Analyst Recommendation Trends (Finnhub API) */}
@@ -998,8 +895,12 @@ export function CompareDashboard() {
                           key={m.symbol}
                           className="rounded-2xl border border-hairline/[0.08] bg-elevated p-4 text-xs text-txt-dim"
                         >
-                          <div className="font-mono font-bold text-txt">{m.symbol}</div>
-                          <p className="mt-1 text-txt-mute">No active analyst recommendations found.</p>
+                          <div className="font-mono font-bold text-txt">
+                            {m.symbol}
+                          </div>
+                          <p className="mt-1 text-txt-mute">
+                            No active analyst recommendations found.
+                          </p>
                         </div>
                       );
                     }
@@ -1016,7 +917,9 @@ export function CompareDashboard() {
                         className="rounded-2xl border border-hairline/[0.08] bg-elevated p-4 space-y-3"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-sm font-bold text-txt">{m.symbol}</span>
+                          <span className="font-mono text-sm font-bold text-txt">
+                            {m.symbol}
+                          </span>
                           <span className="text-xs font-semibold text-up">
                             {rec.bullishRatio}% Bullish
                           </span>
@@ -1024,32 +927,62 @@ export function CompareDashboard() {
 
                         {/* Stacked Recommendation Bar */}
                         <div className="h-2 w-full overflow-hidden rounded-full bg-elevated flex">
-                          <div style={{ width: `${strongBuyPct}%` }} className="bg-emerald-500" title={`Strong Buy: ${rec.strongBuy}`} />
-                          <div style={{ width: `${buyPct}%` }} className="bg-green-400" title={`Buy: ${rec.buy}`} />
-                          <div style={{ width: `${holdPct}%` }} className="bg-accent" title={`Hold: ${rec.hold}`} />
-                          <div style={{ width: `${sellPct}%` }} className="bg-orange-400" title={`Sell: ${rec.sell}`} />
-                          <div style={{ width: `${strongSellPct}%` }} className="bg-rose-500" title={`Strong Sell: ${rec.strongSell}`} />
+                          <div
+                            style={{ width: `${strongBuyPct}%` }}
+                            className="bg-emerald-500"
+                            title={`Strong Buy: ${rec.strongBuy}`}
+                          />
+                          <div
+                            style={{ width: `${buyPct}%` }}
+                            className="bg-green-400"
+                            title={`Buy: ${rec.buy}`}
+                          />
+                          <div
+                            style={{ width: `${holdPct}%` }}
+                            className="bg-accent"
+                            title={`Hold: ${rec.hold}`}
+                          />
+                          <div
+                            style={{ width: `${sellPct}%` }}
+                            className="bg-orange-400"
+                            title={`Sell: ${rec.sell}`}
+                          />
+                          <div
+                            style={{ width: `${strongSellPct}%` }}
+                            className="bg-rose-500"
+                            title={`Strong Sell: ${rec.strongSell}`}
+                          />
                         </div>
 
                         <div className="grid grid-cols-5 text-center text-[10px] text-txt-dim font-mono">
                           <div>
-                            <span className="block text-up font-bold">{rec.strongBuy}</span>
+                            <span className="block text-up font-bold">
+                              {rec.strongBuy}
+                            </span>
                             <span>S-Buy</span>
                           </div>
                           <div>
-                            <span className="block text-green-300 font-bold">{rec.buy}</span>
+                            <span className="block text-green-300 font-bold">
+                              {rec.buy}
+                            </span>
                             <span>Buy</span>
                           </div>
                           <div>
-                            <span className="block text-accent font-bold">{rec.hold}</span>
+                            <span className="block text-accent font-bold">
+                              {rec.hold}
+                            </span>
                             <span>Hold</span>
                           </div>
                           <div>
-                            <span className="block text-orange-300 font-bold">{rec.sell}</span>
+                            <span className="block text-orange-300 font-bold">
+                              {rec.sell}
+                            </span>
                             <span>Sell</span>
                           </div>
                           <div>
-                            <span className="block text-down font-bold">{rec.strongSell}</span>
+                            <span className="block text-down font-bold">
+                              {rec.strongSell}
+                            </span>
                             <span>S-Sell</span>
                           </div>
                         </div>
@@ -1067,27 +1000,33 @@ export function CompareDashboard() {
                 </h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {aiAnalysis.newsComparison.map((nc) => {
-                    const m = aiAnalysis.metrics.find((item) => item.symbol === nc.symbol);
+                    const m = aiAnalysis.metrics.find(
+                      (item) => item.symbol === nc.symbol,
+                    );
                     return (
                       <div
                         key={nc.symbol}
                         className="rounded-2xl border border-hairline/[0.08] bg-elevated p-4 space-y-2.5"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-sm font-bold text-txt">{nc.symbol}</span>
+                          <span className="font-mono text-sm font-bold text-txt">
+                            {nc.symbol}
+                          </span>
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
                               nc.sentiment === "bullish"
                                 ? "bg-emerald-400/20 text-up"
                                 : nc.sentiment === "bearish"
-                                ? "bg-rose-400/20 text-down"
-                                : "bg-elevated text-txt-dim"
+                                  ? "bg-rose-400/20 text-down"
+                                  : "bg-elevated text-txt-dim"
                             }`}
                           >
                             {nc.sentiment}
                           </span>
                         </div>
-                        <p className="text-xs text-txt-dim leading-relaxed">{nc.verdict}</p>
+                        <p className="text-xs text-txt-dim leading-relaxed">
+                          {nc.verdict}
+                        </p>
 
                         {m?.newsSummary.topCatalysts?.length ? (
                           <div className="pt-2 border-t border-hairline/[0.06]">
@@ -1156,9 +1095,7 @@ export function CompareDashboard() {
                     </td>
                     <td
                       className={`py-3 font-semibold ${
-                        metric.returnPct >= 0
-                          ? "text-up"
-                          : "text-down"
+                        metric.returnPct >= 0 ? "text-up" : "text-down"
                       }`}
                     >
                       {metric.returnPct >= 0 ? "+" : ""}
@@ -1183,7 +1120,9 @@ export function CompareDashboard() {
               <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-accent">
                 <Newspaper className="h-4 w-4" /> Company news
               </p>
-              <h2 className="mt-1 font-bold text-txt">Latest on {newsSymbol}</h2>
+              <h2 className="mt-1 font-bold text-txt">
+                Latest on {newsSymbol}
+              </h2>
             </div>
             <select
               aria-label="Company for news"
