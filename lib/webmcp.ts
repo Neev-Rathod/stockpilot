@@ -204,12 +204,17 @@ export const webMcpTools: WebMcpTool[] = [
       required: ["symbol"],
     },
     async execute(params) {
-      const symbol = String(params.symbol ?? "").toUpperCase();
+      const symbol = String(params.symbol ?? "")
+        .trim()
+        .toUpperCase();
       if (!symbol) return { content: [{ type: "text", text: "null" }] };
       const [quote, profile] = await Promise.all([
         getStockQuote(symbol),
         getCompanyProfile(symbol),
       ]);
+      if (typeof window !== "undefined") {
+        window.location.href = `/stock/${encodeURIComponent(symbol)}`;
+      }
       return {
         content: [
           { type: "text", text: JSON.stringify({ quote, profile }, null, 2) },
@@ -234,7 +239,9 @@ export const webMcpTools: WebMcpTool[] = [
       required: ["symbol"],
     },
     async execute(params) {
-      const symbol = String(params.symbol ?? "").trim().toUpperCase();
+      const symbol = String(params.symbol ?? "")
+        .trim()
+        .toUpperCase();
       if (!symbol) {
         return {
           content: [
@@ -442,10 +449,16 @@ export const webMcpTools: WebMcpTool[] = [
         ]);
         const latestRec = recs?.[0] ?? null;
         const totalRec = latestRec
-          ? latestRec.strongBuy + latestRec.buy + latestRec.hold + latestRec.sell + latestRec.strongSell
+          ? latestRec.strongBuy +
+            latestRec.buy +
+            latestRec.hold +
+            latestRec.sell +
+            latestRec.strongSell
           : 0;
         const bullishRatio =
-          latestRec && totalRec > 0 ? (latestRec.strongBuy + latestRec.buy) / totalRec : null;
+          latestRec && totalRec > 0
+            ? (latestRec.strongBuy + latestRec.buy) / totalRec
+            : null;
         const volatility = annualizedVolatility(closes);
         const drawdown = maxDrawdown(closes);
         const risk = computeRiskScore({ volatility, drawdown, bullishRatio });
@@ -466,7 +479,9 @@ export const webMcpTools: WebMcpTool[] = [
               const u = f.reportUrl ?? f.filingUrl;
               if (!u) return "";
               try {
-                const res = await fetch(`/api/sec/report?url=${encodeURIComponent(u)}`);
+                const res = await fetch(
+                  `/api/sec/report?url=${encodeURIComponent(u)}`,
+                );
                 const json = (await res.json()) as { rawText?: string };
                 return typeof json.rawText === "string" ? json.rawText : "";
               } catch {
@@ -477,9 +492,14 @@ export const webMcpTools: WebMcpTool[] = [
           for (const xml of reports) {
             if (!xml) continue;
             try {
-              const doc = new DOMParser().parseFromString(xml, "application/xml");
+              const doc = new DOMParser().parseFromString(
+                xml,
+                "application/xml",
+              );
               doc
-                .querySelectorAll("nonDerivativeTransaction, derivativeTransaction")
+                .querySelectorAll(
+                  "nonDerivativeTransaction, derivativeTransaction",
+                )
                 .forEach((t) => {
                   const code = (
                     t.querySelector("transactionCoding transactionCode") ||
@@ -535,7 +555,8 @@ export const webMcpTools: WebMcpTool[] = [
             if (fm.includes("3")) return "Initial insider ownership (Form 3)";
             if (fm.includes("5")) return "Annual insider ownership (Form 5)";
             if (fm.includes("4")) return "Insider transaction (Form 4)";
-            if (fm.startsWith("S-") || fm.includes("S-1")) return "Securities registration";
+            if (fm.startsWith("S-") || fm.includes("S-1"))
+              return "Securities registration";
             if (fm.includes("DEF")) return "Proxy statement";
             return form ?? "Filing";
           };
@@ -672,7 +693,11 @@ export const webMcpTools: WebMcpTool[] = [
       // Map metric to a sort key used by the markets page
       type SortKey = "change" | "price" | "symbol" | "beta" | "dayRange";
       const sortKey: SortKey =
-        metric === "price" ? "price" : metric === "volume" ? "change" : "change";
+        metric === "price"
+          ? "price"
+          : metric === "volume"
+            ? "change"
+            : "change";
 
       const ranked = quotes
         .map((q) => ({
@@ -705,7 +730,10 @@ export const webMcpTools: WebMcpTool[] = [
           // Store the pending action so the page picks it up after navigation
           sessionStorage.setItem(
             "stockpilot:pending-markets-filter",
-            JSON.stringify({ sort: { key: sortKey, dir: "desc" }, scrollTo: "directory" }),
+            JSON.stringify({
+              sort: { key: sortKey, dir: "desc" },
+              scrollTo: "directory",
+            }),
           );
           window.location.href = "/markets";
         } else {
@@ -780,8 +808,16 @@ export const webMcpTools: WebMcpTool[] = [
       const limit = Number(params.limit ?? 10);
 
       const BETA_MAP: Record<string, number> = {
-        AAPL: 0.84, MSFT: 0.81, AMD: 1.56, CSCO: 0.59, QCOM: 1.05,
-        AMZN: 0.96, TSLA: 1.5, SBUX: 0.64, META: 1.04, NFLX: 1.0,
+        AAPL: 0.84,
+        MSFT: 0.81,
+        AMD: 1.56,
+        CSCO: 0.59,
+        QCOM: 1.05,
+        AMZN: 0.96,
+        TSLA: 1.5,
+        SBUX: 0.64,
+        META: 1.04,
+        NFLX: 1.0,
       };
 
       const quotes = await getMultipleQuotes(
@@ -827,9 +863,10 @@ export const webMcpTools: WebMcpTool[] = [
           "communication services": "Communication Services",
         };
         const sectorLabel = sector
-          ? (SECTOR_LABELS[sector] ?? STOCK_UNIVERSE.find((s) =>
-              s.sector.toLowerCase().includes(sector),
-            )?.sector ?? "All")
+          ? (SECTOR_LABELS[sector] ??
+            STOCK_UNIVERSE.find((s) => s.sector.toLowerCase().includes(sector))
+              ?.sector ??
+            "All")
           : "All";
 
         const filterDetail = {
@@ -853,7 +890,9 @@ export const webMcpTools: WebMcpTool[] = [
           window.location.href = "/markets";
         } else {
           window.dispatchEvent(
-            new CustomEvent("stockpilot:markets:filter", { detail: filterDetail }),
+            new CustomEvent("stockpilot:markets:filter", {
+              detail: filterDetail,
+            }),
           );
         }
       }
@@ -927,7 +966,9 @@ export const webMcpTools: WebMcpTool[] = [
           window.location.href = "/markets";
         } else {
           window.dispatchEvent(
-            new CustomEvent("stockpilot:markets:filter", { detail: scrollDetail }),
+            new CustomEvent("stockpilot:markets:filter", {
+              detail: scrollDetail,
+            }),
           );
         }
       }
@@ -939,7 +980,8 @@ export const webMcpTools: WebMcpTool[] = [
             text: JSON.stringify(
               {
                 sectors,
-                message: "Navigated to the Markets page — Sector Performance section is now visible.",
+                message:
+                  "Navigated to the Markets page — Sector Performance section is now visible.",
               },
               null,
               2,
@@ -1075,7 +1117,8 @@ export const webMcpTools: WebMcpTool[] = [
             {
               type: "text",
               text: JSON.stringify({
-                error: "Symbol is required when no stock page is currently open.",
+                error:
+                  "Symbol is required when no stock page is currently open.",
               }),
             },
           ],
@@ -1126,7 +1169,8 @@ export const webMcpTools: WebMcpTool[] = [
           const candidates = [wanted, ...(aliases[wanted] ?? [])];
           return candidates.some(
             (candidate) =>
-              detectedName.includes(candidate) || candidate.includes(detectedName),
+              detectedName.includes(candidate) ||
+              candidate.includes(detectedName),
           );
         }) ?? null;
       if (match && typeof window !== "undefined") {
@@ -1175,7 +1219,8 @@ export const webMcpTools: WebMcpTool[] = [
                   stopLoss: p.stopLoss ?? null,
                   rationale: p.rationale,
                 })),
-                method: "Detected from real swing structure in the historical price series.",
+                method:
+                  "Detected from real swing structure in the historical price series.",
                 note: match
                   ? `A ${match.name} pattern is present on ${symbol}.`
                   : detected.length
@@ -1213,25 +1258,39 @@ Never invent dates or prices. Always use exact dates and OHLCV values from this 
         symbol: { type: "string", description: "Ticker symbol, e.g. AAPL" },
         windowDays: {
           type: "number",
-          description: "How many calendar days back to sample (default 365 = 1Y visible window)",
+          description:
+            "How many calendar days back to sample (default 365 = 1Y visible window)",
         },
       },
       required: ["symbol"],
     },
     async execute(params) {
       const symbol = String(params.symbol ?? "").toUpperCase();
-      const windowDays = Math.max(1, Math.min(3650, Number(params.windowDays ?? 365)));
+      const windowDays = Math.max(
+        1,
+        Math.min(3650, Number(params.windowDays ?? 365)),
+      );
       const series = await getLocalOhlcv([symbol]);
       const candles = series[0]?.candles ?? [];
       if (!candles.length) {
         return {
-          content: [{ type: "text", text: JSON.stringify({ error: `No OHLCV data found for ${symbol}.` }) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: `No OHLCV data found for ${symbol}.`,
+              }),
+            },
+          ],
         };
       }
       const firstDate = candles[0].date;
       const lastDate = candles[candles.length - 1].date;
-      const cutoffTs = new Date(`${lastDate}T00:00:00Z`).getTime() - windowDays * 86400000;
-      const visible = candles.filter((c) => new Date(`${c.date}T00:00:00Z`).getTime() >= cutoffTs);
+      const cutoffTs =
+        new Date(`${lastDate}T00:00:00Z`).getTime() - windowDays * 86400000;
+      const visible = candles.filter(
+        (c) => new Date(`${c.date}T00:00:00Z`).getTime() >= cutoffTs,
+      );
       const visibleWindowStart = visible[0]?.date ?? firstDate;
       const priceMin = +Math.min(...visible.map((c) => c.low)).toFixed(2);
       const priceMax = +Math.max(...visible.map((c) => c.high)).toFixed(2);
@@ -1248,7 +1307,12 @@ Never invent dates or prices. Always use exact dates and OHLCV values from this 
       const step = Math.max(1, Math.floor(visible.length / 20));
       const pivotSamples = visible
         .filter((_, i) => i % step === 0)
-        .map((c) => ({ date: c.date, high: +c.high.toFixed(2), low: +c.low.toFixed(2), close: +c.close.toFixed(2) }));
+        .map((c) => ({
+          date: c.date,
+          high: +c.high.toFixed(2),
+          low: +c.low.toFixed(2),
+          close: +c.close.toFixed(2),
+        }));
       return {
         content: [
           {
@@ -1337,8 +1401,16 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
                 items: {
                   type: "object",
                   properties: {
-                    date: { type: "string", description: "YYYY-MM-DD trading date from get_chart_data_range" },
-                    price: { type: "number", description: "Dollar price — must be within the high/low of that date's candle" },
+                    date: {
+                      type: "string",
+                      description:
+                        "YYYY-MM-DD trading date from get_chart_data_range",
+                    },
+                    price: {
+                      type: "number",
+                      description:
+                        "Dollar price — must be within the high/low of that date's candle",
+                    },
                   },
                   required: ["date", "price"],
                 },
@@ -1362,7 +1434,12 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
       const symbol = String(params.symbol ?? "").toUpperCase();
       if (!symbol) {
         return {
-          content: [{ type: "text", text: JSON.stringify({ error: "symbol is required." }) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ error: "symbol is required." }),
+            },
+          ],
         };
       }
 
@@ -1371,7 +1448,14 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
       const candles = series[0]?.candles ?? [];
       if (!candles.length) {
         return {
-          content: [{ type: "text", text: JSON.stringify({ error: `No OHLCV data for ${symbol}. Call get_chart_data_range to verify the symbol.` }) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: `No OHLCV data for ${symbol}. Call get_chart_data_range to verify the symbol.`,
+              }),
+            },
+          ],
         };
       }
 
@@ -1402,61 +1486,96 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
        * Clamp a price to the candle's high/low range so the point sits on the bar.
        * Adds a small ±0.5% margin so the dot isn't right on the wick tip.
        */
-      function clampPriceToCandle(candle: { high: number; low: number; close: number }, price: number): number {
+      function clampPriceToCandle(
+        candle: { high: number; low: number; close: number },
+        price: number,
+      ): number {
         const lo = candle.low * 0.995;
         const hi = candle.high * 1.005;
         return +Math.min(hi, Math.max(lo, price)).toFixed(2);
       }
 
       const PATTERN_TOOL_NAMES = new Set([
-        "abcd", "xabcd", "cypher", "headshoulders", "triangle", "threedrives",
+        "abcd",
+        "xabcd",
+        "cypher",
+        "headshoulders",
+        "triangle",
+        "threedrives",
       ]);
 
       const rawDrawings = Array.isArray(params.drawings) ? params.drawings : [];
-      const snappedDrawings: { date: string; original: string; snapped: string; price: number; clampedPrice: number }[] = [];
+      const snappedDrawings: {
+        date: string;
+        original: string;
+        snapped: string;
+        price: number;
+        clampedPrice: number;
+      }[] = [];
 
-      const drawings = rawDrawings.map((d: Record<string, unknown>, idx: number) => {
-        const toolName = String(d.tool ?? "trendline");
-        const rawPoints = Array.isArray(d.points) ? (d.points as Record<string, unknown>[]) : [];
+      const drawings = rawDrawings.map(
+        (d: Record<string, unknown>, idx: number) => {
+          const toolName = String(d.tool ?? "trendline");
+          const rawPoints = Array.isArray(d.points)
+            ? (d.points as Record<string, unknown>[])
+            : [];
 
-        const resolvedPoints = rawPoints.map((p) => {
-          const rawDate = String(p.date ?? "");
-          const snappedDate = snapToNearestTradingDay(rawDate);
-          const candle = candleByDate.get(snappedDate)!;
-          const rawPrice = Number(p.price ?? candle.close);
-          const clampedPrice = clampPriceToCandle(candle, rawPrice);
-          snappedDrawings.push({ date: rawDate, original: rawDate, snapped: snappedDate, price: rawPrice, clampedPrice });
-          return { time: snappedDate, price: clampedPrice };
-        });
+          const resolvedPoints = rawPoints.map((p) => {
+            const rawDate = String(p.date ?? "");
+            const snappedDate = snapToNearestTradingDay(rawDate);
+            const candle = candleByDate.get(snappedDate)!;
+            const rawPrice = Number(p.price ?? candle.close);
+            const clampedPrice = clampPriceToCandle(candle, rawPrice);
+            snappedDrawings.push({
+              date: rawDate,
+              original: rawDate,
+              snapped: snappedDate,
+              price: rawPrice,
+              clampedPrice,
+            });
+            return { time: snappedDate, price: clampedPrice };
+          });
 
-        return {
-          id: `draw-${Date.now()}-${idx}`,
-          tool: toolName,
-          color:
-            typeof d.color === "string" && d.color
-              ? d.color
-              : PATTERN_TOOL_NAMES.has(toolName)
-              ? "#fbbf24"
-              : "#38bdf8",
-          text: typeof d.text === "string" ? d.text : undefined,
-          points: resolvedPoints,
-        };
-      });
+          return {
+            id: `draw-${Date.now()}-${idx}`,
+            tool: toolName,
+            color:
+              typeof d.color === "string" && d.color
+                ? d.color
+                : PATTERN_TOOL_NAMES.has(toolName)
+                  ? "#fbbf24"
+                  : "#38bdf8",
+            text: typeof d.text === "string" ? d.text : undefined,
+            points: resolvedPoints,
+          };
+        },
+      );
 
       // ── 2. Determine the date span of all drawing points so we can expand
       //      the chart's visible range to include them all ──
-      const allPointDates = drawings.flatMap((d) => d.points.map((p) => p.time as string));
-      const earliestDrawingDate = allPointDates.length ? allPointDates.sort()[0] : lastDate;
+      const allPointDates = drawings.flatMap((d) =>
+        d.points.map((p) => p.time as string),
+      );
+      const earliestDrawingDate = allPointDates.length
+        ? allPointDates.sort()[0]
+        : lastDate;
 
       // Figure out how many days back from lastDate the earliest point is
-      const msBack = new Date(`${lastDate}T00:00:00Z`).getTime() - new Date(`${earliestDrawingDate}T00:00:00Z`).getTime();
+      const msBack =
+        new Date(`${lastDate}T00:00:00Z`).getTime() -
+        new Date(`${earliestDrawingDate}T00:00:00Z`).getTime();
       const daysBack = Math.ceil(msBack / 86400000);
       // Pick the smallest standard range that covers all points; fall back to 5Y
       const rangeToSet: string =
-        daysBack <= 31 ? "1M" :
-        daysBack <= 92 ? "3M" :
-        daysBack <= 184 ? "6M" :
-        daysBack <= 366 ? "1Y" : "5Y";
+        daysBack <= 31
+          ? "1M"
+          : daysBack <= 92
+            ? "3M"
+            : daysBack <= 184
+              ? "6M"
+              : daysBack <= 366
+                ? "1Y"
+                : "5Y";
 
       const clearDrawings = Boolean(params.clearExisting ?? true);
       const chartStyle = String(params.chartStyle ?? "candles");
@@ -1488,8 +1607,10 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
         .filter((s) => s.original !== s.snapped || s.price !== s.clampedPrice)
         .map((s) => {
           const parts = [];
-          if (s.original !== s.snapped) parts.push(`date snapped ${s.original}→${s.snapped}`);
-          if (s.price !== s.clampedPrice) parts.push(`price clamped $${s.price}→$${s.clampedPrice}`);
+          if (s.original !== s.snapped)
+            parts.push(`date snapped ${s.original}→${s.snapped}`);
+          if (s.price !== s.clampedPrice)
+            parts.push(`price clamped $${s.price}→$${s.clampedPrice}`);
           return parts.join(", ");
         });
 
@@ -1536,7 +1657,14 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
       const last = candles[candles.length - 1];
       if (!last) {
         return {
-          content: [{ type: "text", text: JSON.stringify({ error: `No price history for ${symbol}.` }) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: `No price history for ${symbol}.`,
+              }),
+            },
+          ],
         };
       }
       const piv = pivotLevels(last.high, last.low, last.close);
@@ -1546,7 +1674,8 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
       const levels = {
         symbol,
         currentPrice: +last.close.toFixed(2),
-        method: "Classic floor-trader pivots from the latest bar, plus the 60-day range.",
+        method:
+          "Classic floor-trader pivots from the latest bar, plus the 60-day range.",
         pivotPoint: +piv.pivot.toFixed(2),
         support: [
           { level: +piv.s1.toFixed(2), strength: "strong", type: "S1" },
@@ -2767,11 +2896,12 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
       const openedSymbol =
         currentUrl?.pathname.match(/^\/stock\/([^/]+)/i)?.[1]?.toUpperCase() ??
         currentUrl?.searchParams.get("symbol")?.toUpperCase();
-      const symbols = Array.isArray(params.symbols) && params.symbols.length > 0
-        ? params.symbols.map((s) => String(s).toUpperCase())
-        : openedSymbol
-          ? [openedSymbol]
-          : ["AAPL", "MSFT"];
+      const symbols =
+        Array.isArray(params.symbols) && params.symbols.length > 0
+          ? params.symbols.map((s) => String(s).toUpperCase())
+          : openedSymbol
+            ? [openedSymbol]
+            : ["AAPL", "MSFT"];
 
       let focusSymbol = params.focusSymbol
         ? String(params.focusSymbol).toUpperCase()
@@ -2790,7 +2920,11 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
             id: `draw-${Date.now()}-${i}`,
             tool: d.tool,
             points: d.points,
-            color: d.color || (["headshoulders", "triangle", "abcd"].includes(d.tool) ? "#fbbf24" : "#38bdf8"),
+            color:
+              d.color ||
+              (["headshoulders", "triangle", "abcd"].includes(d.tool)
+                ? "#fbbf24"
+                : "#38bdf8"),
             text: d.text,
           }))
         : [];
@@ -2801,14 +2935,20 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
 
       // 1. Fetch OHLCV data
       const allSeries = await getLocalOhlcv(symbols);
-      const focusSeries = allSeries.find((s) => s.symbol === focusSymbol) || allSeries[0];
+      const focusSeries =
+        allSeries.find((s) => s.symbol === focusSymbol) || allSeries[0];
 
       // 2. Auto-detect patterns if requested
       if (autoDrawPatterns && focusSeries) {
-        const detected = detectPatternsForSymbol(focusSymbol, focusSeries.candles);
+        const detected = detectPatternsForSymbol(
+          focusSymbol,
+          focusSeries.candles,
+        );
         if (detected.length > 0) {
           const autoDrawings = detected.flatMap((p) => p.drawings);
-          drawings = clearDrawings ? autoDrawings : [...drawings, ...autoDrawings];
+          drawings = clearDrawings
+            ? autoDrawings
+            : [...drawings, ...autoDrawings];
         }
       }
 
@@ -2819,12 +2959,30 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
 
       if (runAiAnalysis) {
         const to = new Date().toISOString().slice(0, 10);
-        const from = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        const from = new Date(Date.now() - 30 * 86400000)
+          .toISOString()
+          .slice(0, 10);
 
         const [newsEntries, recEntries, finEntries] = await Promise.all([
-          Promise.all(symbols.map(async (s) => [s, await getCompanyNews(s, from, to)] as const)),
-          Promise.all(symbols.map(async (s) => [s, await getRecommendationTrends(s)] as const)),
-          Promise.all(symbols.map(async (s) => [s, await getFinancialsReported({ symbol: s, freq: "quarterly" })] as const)),
+          Promise.all(
+            symbols.map(
+              async (s) => [s, await getCompanyNews(s, from, to)] as const,
+            ),
+          ),
+          Promise.all(
+            symbols.map(
+              async (s) => [s, await getRecommendationTrends(s)] as const,
+            ),
+          ),
+          Promise.all(
+            symbols.map(
+              async (s) =>
+                [
+                  s,
+                  await getFinancialsReported({ symbol: s, freq: "quarterly" }),
+                ] as const,
+            ),
+          ),
         ]);
 
         const newsMap = Object.fromEntries(newsEntries);
@@ -2838,7 +2996,10 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
           financialsMap: finMap,
         });
 
-        if (drawings.length === 0 && analysisResult.detectedPatterns.length > 0) {
+        if (
+          drawings.length === 0 &&
+          analysisResult.detectedPatterns.length > 0
+        ) {
           const topPattern = analysisResult.detectedPatterns[0];
           focusSymbol = topPattern.symbol;
           drawings = topPattern.drawings;
@@ -2929,24 +3090,29 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
                         analystRating: m.analystConsensus
                           ? `${m.analystConsensus.consensusScore}/5 (${m.analystConsensus.bullishRatio}% bullish)`
                           : "N/A",
-                        reportedFinancials: m.reportedFinancials?.period ?? "Standard filing",
+                        reportedFinancials:
+                          m.reportedFinancials?.period ?? "Standard filing",
                         newsSentiment:
                           m.newsSummary.sentimentScore > 0.15
                             ? "Bullish"
                             : m.newsSummary.sentimentScore < -0.15
-                            ? "Bearish"
-                            : "Neutral",
+                              ? "Bearish"
+                              : "Neutral",
                       })),
-                      detectedPatterns: analysisResult.detectedPatterns.map((p) => ({
-                        symbol: p.symbol,
-                        patternName: p.name,
-                        tool: p.tool,
-                        direction: p.direction,
-                        confidence: `${p.confidence}%`,
-                        targetPrice: p.targetPrice ? `$${p.targetPrice}` : undefined,
-                        stopLoss: p.stopLoss ? `$${p.stopLoss}` : undefined,
-                        rationale: p.rationale,
-                      })),
+                      detectedPatterns: analysisResult.detectedPatterns.map(
+                        (p) => ({
+                          symbol: p.symbol,
+                          patternName: p.name,
+                          tool: p.tool,
+                          direction: p.direction,
+                          confidence: `${p.confidence}%`,
+                          targetPrice: p.targetPrice
+                            ? `$${p.targetPrice}`
+                            : undefined,
+                          stopLoss: p.stopLoss ? `$${p.stopLoss}` : undefined,
+                          rationale: p.rationale,
+                        }),
+                      ),
                       recommendations: symbols.map((s) => ({
                         symbol: s,
                         trends: recMap[s] ?? [],
@@ -3058,7 +3224,9 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
       to.setDate(to.getDate() + 120);
       const fmt = (d: Date) => d.toISOString().split("T")[0];
       const perSymbol = await Promise.all(
-        STOCK_UNIVERSE.map((s) => getEarningsCalendar(fmt(from), fmt(to), s.symbol)),
+        STOCK_UNIVERSE.map((s) =>
+          getEarningsCalendar(fmt(from), fmt(to), s.symbol),
+        ),
       );
       const sectorOf = new Map(STOCK_UNIVERSE.map((s) => [s.symbol, s.sector]));
       const items = perSymbol
@@ -3073,7 +3241,9 @@ Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nea
           epsActual: e.epsActual ?? null,
           revenueEstimate: e.revenueEstimate ?? null,
         }))
-        .sort((a, b) => String(a.earningsDate).localeCompare(String(b.earningsDate)));
+        .sort((a, b) =>
+          String(a.earningsDate).localeCompare(String(b.earningsDate)),
+        );
       return {
         content: [
           {
