@@ -1130,27 +1130,28 @@ export const webMcpTools: WebMcpTool[] = [
           );
         }) ?? null;
       if (match && typeof window !== "undefined") {
-        const detail = {
-          symbol,
-          style: "candles",
+        const syncPayload = {
+          symbols: [symbol],
+          focusSymbol: symbol,
+          chartStyle: "candles",
+          range: "1Y",
           drawings: match.drawings,
+          clearDrawings: true,
         };
         if (window.location.pathname !== "/compare") {
           sessionStorage.setItem(
             "stockpilot:pending-compare-sync",
-            JSON.stringify({
-              symbols: [symbol],
-              focusSymbol: symbol,
-              chartStyle: "candles",
-              drawings: match.drawings,
-              clearDrawings: true,
-            }),
+            JSON.stringify(syncPayload),
           );
           window.location.href = `/compare?symbols=${encodeURIComponent(symbol)}`;
         } else {
+          // Dispatch via compare:sync first so the dashboard updates the
+          // selected symbol list and focusSymbol, then the chart-level event
+          // will be re-dispatched by the dashboard after 150 ms (see
+          // compare-dashboard handleSync).
           window.dispatchEvent(
-            new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
-              detail,
+            new CustomEvent("stockpilot:compare:sync", {
+              detail: syncPayload,
             }),
           );
         }
@@ -1180,6 +1181,332 @@ export const webMcpTools: WebMcpTool[] = [
                   : detected.length
                     ? `No ${pattern} detected on ${symbol}; ${detected.length} other pattern(s) were found.`
                     : `No significant chart patterns detected on ${symbol} in the available history.`,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  },
+
+  // ─── GET CHART DATA RANGE ─────────────────────────────────────────────────────
+  // Call this BEFORE draw_on_compare_chart to learn the exact date/price bounds
+  // of a symbol so every drawing point lands inside the visible data.
+  {
+    name: "get_chart_data_range",
+    category: "Chart Patterns",
+    description: `Return the exact OHLCV data boundaries for a stock symbol so you can place drawing points accurately on the compare chart.
+
+ALWAYS call this before draw_on_compare_chart. It tells you:
+- firstDate / lastDate  → the hard date bounds of the dataset (all dates outside these don't exist)
+- priceMin / priceMax   → the price range over the visible window
+- latestCandle          → the most recent bar (use this as your "now" anchor)
+- recentCandles         → the last 20 bars with exact date + OHLC (use these prices for anchor points)
+- visibleWindowStart    → the start of the default 1Y visible window
+
+Never invent dates or prices. Always use exact dates and OHLCV values from this response.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Ticker symbol, e.g. AAPL" },
+        windowDays: {
+          type: "number",
+          description: "How many calendar days back to sample (default 365 = 1Y visible window)",
+        },
+      },
+      required: ["symbol"],
+    },
+    async execute(params) {
+      const symbol = String(params.symbol ?? "").toUpperCase();
+      const windowDays = Math.max(1, Math.min(3650, Number(params.windowDays ?? 365)));
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      if (!candles.length) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: `No OHLCV data found for ${symbol}.` }) }],
+        };
+      }
+      const firstDate = candles[0].date;
+      const lastDate = candles[candles.length - 1].date;
+      const cutoffTs = new Date(`${lastDate}T00:00:00Z`).getTime() - windowDays * 86400000;
+      const visible = candles.filter((c) => new Date(`${c.date}T00:00:00Z`).getTime() >= cutoffTs);
+      const visibleWindowStart = visible[0]?.date ?? firstDate;
+      const priceMin = +Math.min(...visible.map((c) => c.low)).toFixed(2);
+      const priceMax = +Math.max(...visible.map((c) => c.high)).toFixed(2);
+      const latestCandle = candles[candles.length - 1];
+      // Return last 30 candles as concrete anchor reference
+      const recentCandles = visible.slice(-30).map((c) => ({
+        date: c.date,
+        open: +c.open.toFixed(2),
+        high: +c.high.toFixed(2),
+        low: +c.low.toFixed(2),
+        close: +c.close.toFixed(2),
+      }));
+      // Pivot / swing samples from visible window (every ~10th bar)
+      const step = Math.max(1, Math.floor(visible.length / 20));
+      const pivotSamples = visible
+        .filter((_, i) => i % step === 0)
+        .map((c) => ({ date: c.date, high: +c.high.toFixed(2), low: +c.low.toFixed(2), close: +c.close.toFixed(2) }));
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                symbol,
+                datasetBounds: { firstDate, lastDate },
+                visibleWindow: {
+                  windowDays,
+                  visibleWindowStart,
+                  visibleWindowEnd: lastDate,
+                  totalVisibleBars: visible.length,
+                },
+                priceRange: { priceMin, priceMax },
+                latestCandle: {
+                  date: latestCandle.date,
+                  open: +latestCandle.open.toFixed(2),
+                  high: +latestCandle.high.toFixed(2),
+                  low: +latestCandle.low.toFixed(2),
+                  close: +latestCandle.close.toFixed(2),
+                },
+                recentCandles,
+                pivotSamples,
+                instructions: [
+                  `All drawing point dates MUST be between ${visibleWindowStart} and ${lastDate}.`,
+                  `All drawing point prices MUST be between ${priceMin} and ${priceMax}.`,
+                  "Use exact date strings from recentCandles or pivotSamples for anchor points.",
+                  "Never invent or estimate dates — only use dates that appear in this response.",
+                ],
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  },
+
+  // ─── DRAW ON COMPARE CHART ────────────────────────────────────────────────────
+  // Use get_chart_data_range first to get valid dates/prices, then call this.
+  // The tool fetches the real OHLCV, snaps every point to the nearest real
+  // trading day, clamps prices to that candle's high/low range, and expands
+  // the visible chart range so all drawing points are in view.
+  {
+    name: "draw_on_compare_chart",
+    category: "Chart Patterns",
+    description: `Draw technical pattern annotations (trendlines, ABCD, head & shoulders, triangles, rectangles, text labels, horizontal lines, etc.) directly onto the comparison chart canvas.
+
+IMPORTANT — call get_chart_data_range first to get exact valid dates and prices for ${""} the symbol. Never invent dates or prices; use only values from that response.
+
+Supported tool values: trendline, horizontal, ray, channel, rectangle, abcd, xabcd, cypher, headshoulders, triangle, threedrives, measure, text.
+
+Points use { date: "YYYY-MM-DD", price: <number> }. Dates are snapped to the nearest real trading day. Prices are clamped to that bar's high/low range. The chart scrolls to show all annotated bars.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "Ticker to display in the chart (e.g. AAPL)",
+        },
+        drawings: {
+          type: "array",
+          description: "One or more drawing objects to render on the chart",
+          items: {
+            type: "object",
+            properties: {
+              tool: {
+                type: "string",
+                description:
+                  "Drawing type: trendline | horizontal | ray | channel | rectangle | abcd | xabcd | cypher | headshoulders | triangle | threedrives | measure | text",
+              },
+              color: {
+                type: "string",
+                description: "CSS hex color, e.g. #fbbf24.",
+              },
+              text: {
+                type: "string",
+                description: "Label text (only for tool === 'text').",
+              },
+              points: {
+                type: "array",
+                description:
+                  "Anchor points. Get exact dates and prices from get_chart_data_range first. Required point counts: trendline/ray/rectangle/measure=2, horizontal=1, channel=3, abcd/triangle=4, xabcd/cypher/headshoulders/threedrives=5, text=1.",
+                items: {
+                  type: "object",
+                  properties: {
+                    date: { type: "string", description: "YYYY-MM-DD trading date from get_chart_data_range" },
+                    price: { type: "number", description: "Dollar price — must be within the high/low of that date's candle" },
+                  },
+                  required: ["date", "price"],
+                },
+              },
+            },
+            required: ["tool", "points"],
+          },
+        },
+        clearExisting: {
+          type: "boolean",
+          description: "Remove existing canvas drawings first (default true).",
+        },
+        chartStyle: {
+          type: "string",
+          description: "candles | bars | line | area (default candles).",
+        },
+      },
+      required: ["symbol", "drawings"],
+    },
+    async execute(params) {
+      const symbol = String(params.symbol ?? "").toUpperCase();
+      if (!symbol) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: "symbol is required." }) }],
+        };
+      }
+
+      // ── 1. Fetch real OHLCV so we can validate / snap every point ──
+      const series = await getLocalOhlcv([symbol]);
+      const candles = series[0]?.candles ?? [];
+      if (!candles.length) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ error: `No OHLCV data for ${symbol}. Call get_chart_data_range to verify the symbol.` }) }],
+        };
+      }
+
+      // Build a date→candle lookup (O(1) per point)
+      const candleByDate = new Map(candles.map((c) => [c.date, c]));
+      const sortedDates = candles.map((c) => c.date); // already ascending
+
+      const firstDate = sortedDates[0];
+      const lastDate = sortedDates[sortedDates.length - 1];
+
+      /**
+       * Snap an input date string to the nearest real trading day in the dataset.
+       * If the date is outside the dataset range entirely, clamp to first/last.
+       */
+      function snapToNearestTradingDay(dateStr: string): string {
+        if (candleByDate.has(dateStr)) return dateStr;
+        // Clamp to dataset bounds
+        if (dateStr < firstDate) return firstDate;
+        if (dateStr > lastDate) return lastDate;
+        // Walk backwards to find the nearest earlier trading day
+        for (let i = sortedDates.length - 1; i >= 0; i--) {
+          if (sortedDates[i] <= dateStr) return sortedDates[i];
+        }
+        return firstDate;
+      }
+
+      /**
+       * Clamp a price to the candle's high/low range so the point sits on the bar.
+       * Adds a small ±0.5% margin so the dot isn't right on the wick tip.
+       */
+      function clampPriceToCandle(candle: { high: number; low: number; close: number }, price: number): number {
+        const lo = candle.low * 0.995;
+        const hi = candle.high * 1.005;
+        return +Math.min(hi, Math.max(lo, price)).toFixed(2);
+      }
+
+      const PATTERN_TOOL_NAMES = new Set([
+        "abcd", "xabcd", "cypher", "headshoulders", "triangle", "threedrives",
+      ]);
+
+      const rawDrawings = Array.isArray(params.drawings) ? params.drawings : [];
+      const snappedDrawings: { date: string; original: string; snapped: string; price: number; clampedPrice: number }[] = [];
+
+      const drawings = rawDrawings.map((d: Record<string, unknown>, idx: number) => {
+        const toolName = String(d.tool ?? "trendline");
+        const rawPoints = Array.isArray(d.points) ? (d.points as Record<string, unknown>[]) : [];
+
+        const resolvedPoints = rawPoints.map((p) => {
+          const rawDate = String(p.date ?? "");
+          const snappedDate = snapToNearestTradingDay(rawDate);
+          const candle = candleByDate.get(snappedDate)!;
+          const rawPrice = Number(p.price ?? candle.close);
+          const clampedPrice = clampPriceToCandle(candle, rawPrice);
+          snappedDrawings.push({ date: rawDate, original: rawDate, snapped: snappedDate, price: rawPrice, clampedPrice });
+          return { time: snappedDate, price: clampedPrice };
+        });
+
+        return {
+          id: `draw-${Date.now()}-${idx}`,
+          tool: toolName,
+          color:
+            typeof d.color === "string" && d.color
+              ? d.color
+              : PATTERN_TOOL_NAMES.has(toolName)
+              ? "#fbbf24"
+              : "#38bdf8",
+          text: typeof d.text === "string" ? d.text : undefined,
+          points: resolvedPoints,
+        };
+      });
+
+      // ── 2. Determine the date span of all drawing points so we can expand
+      //      the chart's visible range to include them all ──
+      const allPointDates = drawings.flatMap((d) => d.points.map((p) => p.time as string));
+      const earliestDrawingDate = allPointDates.length ? allPointDates.sort()[0] : lastDate;
+
+      // Figure out how many days back from lastDate the earliest point is
+      const msBack = new Date(`${lastDate}T00:00:00Z`).getTime() - new Date(`${earliestDrawingDate}T00:00:00Z`).getTime();
+      const daysBack = Math.ceil(msBack / 86400000);
+      // Pick the smallest standard range that covers all points; fall back to 5Y
+      const rangeToSet: string =
+        daysBack <= 31 ? "1M" :
+        daysBack <= 92 ? "3M" :
+        daysBack <= 184 ? "6M" :
+        daysBack <= 366 ? "1Y" : "5Y";
+
+      const clearDrawings = Boolean(params.clearExisting ?? true);
+      const chartStyle = String(params.chartStyle ?? "candles");
+
+      const syncPayload = {
+        symbols: [symbol],
+        focusSymbol: symbol,
+        chartStyle,
+        range: rangeToSet,
+        drawings,
+        clearDrawings,
+      };
+
+      if (typeof window !== "undefined") {
+        if (window.location.pathname !== "/compare") {
+          sessionStorage.setItem(
+            "stockpilot:pending-compare-sync",
+            JSON.stringify(syncPayload),
+          );
+          window.location.href = `/compare?symbols=${encodeURIComponent(symbol)}`;
+        } else {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:compare:sync", { detail: syncPayload }),
+          );
+        }
+      }
+
+      const warnings = snappedDrawings
+        .filter((s) => s.original !== s.snapped || s.price !== s.clampedPrice)
+        .map((s) => {
+          const parts = [];
+          if (s.original !== s.snapped) parts.push(`date snapped ${s.original}→${s.snapped}`);
+          if (s.price !== s.clampedPrice) parts.push(`price clamped $${s.price}→$${s.clampedPrice}`);
+          return parts.join(", ");
+        });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ok: true,
+                symbol,
+                drawingsAdded: drawings.length,
+                clearExisting: clearDrawings,
+                rangeSetTo: rangeToSet,
+                chartBounds: { firstDate, lastDate },
+                warnings: warnings.length ? warnings : undefined,
+                note: `${drawings.length} drawing(s) dispatched to the compare chart for ${symbol}. Range expanded to ${rangeToSet} to show all points. ${warnings.length ? `${warnings.length} point(s) were snapped/clamped to real candle data.` : "All points matched real trading days exactly."}`,
               },
               null,
               2,

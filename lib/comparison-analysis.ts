@@ -156,9 +156,18 @@ function calculateRsi(candles: OhlcvCandle[], period = 14): number {
 
 export function detectPatternsForSymbol(
   symbol: string,
-  candles: OhlcvCandle[],
+  allCandles: OhlcvCandle[],
 ): DetectedChartPattern[] {
-  if (!candles || candles.length < 15) return [];
+  if (!allCandles || allCandles.length < 15) return [];
+
+  // ── Restrict analysis to the last 1 year of bars (≈252 trading days) so
+  //    every detected swing point lands inside the default 1Y visible window.
+  //    Without this, swing highs/lows from years ago produce drawing points
+  //    that are off-screen and invisible on the chart.
+  const ONE_YEAR_BARS = 252;
+  const candles = allCandles.length > ONE_YEAR_BARS
+    ? allCandles.slice(-ONE_YEAR_BARS)
+    : allCandles;
 
   const patterns: DetectedChartPattern[] = [];
   const n = candles.length;

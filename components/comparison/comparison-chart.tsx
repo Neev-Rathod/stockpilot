@@ -409,7 +409,7 @@ export function ComparisonChart({
 
     function handleAddDrawing(e: Event) {
       const detail = (
-        e as CustomEvent<{ drawing?: Drawing; drawings?: Drawing[] }>
+        e as CustomEvent<{ drawing?: Drawing; drawings?: Drawing[]; fitContent?: boolean }>
       ).detail;
       if (detail?.drawing) {
         setDrawings((prev) => {
@@ -417,12 +417,19 @@ export function ComparisonChart({
           onDrawingsChange?.(next);
           return next;
         });
+        if (detail.fitContent) {
+          setTimeout(() => chartRef.current?.timeScale().fitContent(), 80);
+        }
       } else if (Array.isArray(detail?.drawings)) {
         setDrawings((prev) => {
           const next = [...prev, ...detail.drawings!];
           onDrawingsChange?.(next);
           return next;
         });
+        if (detail.fitContent !== false) {
+          // Default: always fit when multiple drawings arrive programmatically.
+          setTimeout(() => chartRef.current?.timeScale().fitContent(), 80);
+        }
       }
     }
 
@@ -439,6 +446,7 @@ export function ComparisonChart({
           symbol?: string;
           drawings: Drawing[];
           style?: ChartStyle;
+          fitContent?: boolean;
         }>
       ).detail;
       if (detail?.symbol) {
@@ -455,6 +463,12 @@ export function ComparisonChart({
       if (Array.isArray(detail?.drawings)) {
         setDrawings(detail.drawings);
         onDrawingsChange?.(detail.drawings);
+        // Scroll the time scale so all pattern points are visible.
+        // Use a small delay so the series data has been committed to the chart
+        // before we attempt to scroll to the drawing coordinates.
+        setTimeout(() => {
+          chartRef.current?.timeScale().fitContent();
+        }, 80);
       }
     }
 

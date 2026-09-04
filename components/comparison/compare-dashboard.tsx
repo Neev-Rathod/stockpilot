@@ -202,11 +202,30 @@ export function CompareDashboard() {
         setDrawings([]);
       }
       if (Array.isArray(d.drawings)) {
+        const nextDrawings = d.clearDrawings ? d.drawings : undefined;
         if (d.clearDrawings) {
           setDrawings(d.drawings);
         } else {
           setDrawings((prev) => [...prev, ...d.drawings]);
         }
+        // Also fire the chart-level event so the chart calls fitContent and
+        // scrolls the time scale to the drawing points.  Use a small delay so
+        // the dashboard state (selected symbols, focusSymbol, chartStyle) has
+        // been applied before the chart tries to resolve coordinates.
+        const focusSym = d.focusSymbol
+          ? String(d.focusSymbol).toUpperCase()
+          : undefined;
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent("stockpilot:compare-chart:apply-ai-patterns", {
+              detail: {
+                symbol: focusSym,
+                style: d.chartStyle ?? "candles",
+                drawings: nextDrawings ?? d.drawings,
+              },
+            }),
+          );
+        }, 150);
       }
     }
 
