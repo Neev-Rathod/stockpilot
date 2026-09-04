@@ -63,6 +63,28 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
     [filings, page],
   );
 
+  // ── Shared state-setter: apply a sec-review payload whether it came from a
+  //    live CustomEvent (panel already mounted) or from sessionStorage restore
+  //    (panel just mounted after a cross-page navigation).
+  function applyReview(d: Record<string, unknown>) {
+    if (!d) return;
+    if (d.symbol) setSelectedSymbol(String(d.symbol).toUpperCase());
+    setAnalysis((d.analysis as FilingAnalysis) ?? null);
+    const incomingFilings: ReviewFiling[] = Array.isArray(d.filings)
+      ? (d.filings as ReviewFiling[])
+      : [];
+    if (!incomingFilings.length) return;
+    setExpandedKey(null);
+    setReview({
+      filings: incomingFilings,
+      agentTerms: Array.isArray(d.highlight)
+        ? (d.highlight as unknown[]).map(String)
+        : [],
+    });
+    setReviewIndex(0);
+    setReviewPlaying(true);
+  }
+
   // WebMCP tool → open a specific filing, highlight it, show the scorecard.
   useEffect(() => {
     function onAnalyze(event: Event) {
@@ -77,22 +99,28 @@ export function SECFilingsPanel({ symbol }: { symbol?: string }) {
     return () => window.removeEventListener("stockpilot:sec-analyze", onAnalyze);
   }, []);
 
-  // WebMCP tool → start a guided review across the latest filings.
+  // WebMCP tool → start a guided review (live path: panel already on screen).
   useEffect(() => {
     function onReview(event: Event) {
-      const d = (event as CustomEvent).detail;
-      if (!d) return;
-      if (d.symbol) setSelectedSymbol(String(d.symbol).toUpperCase());
-      setAnalysis(d.analysis ?? null);
-      const filings: ReviewFiling[] = Array.isArray(d.filings) ? d.filings : [];
-      if (!filings.length) return;
-      setExpandedKey(null);
-      setReview({ filings, agentTerms: Array.isArray(d.highlight) ? d.highlight.map(String) : [] });
-      setReviewIndex(0);
-      setReviewPlaying(true);
+      applyReview((event as CustomEvent).detail);
     }
     window.addEventListener("stockpilot:sec-review", onReview);
     return () => window.removeEventListener("stockpilot:sec-review", onReview);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On mount: restore a pending review the tool stored before navigating here.
+  // Calls applyReview directly — no CustomEvent re-dispatch, no timing race.
+  useEffect(() => {
+    const raw = sessionStorage.getItem("stockpilot:pending-sec-review");
+    if (!raw) return;
+    sessionStorage.removeItem("stockpilot:pending-sec-review");
+    try {
+      applyReview(JSON.parse(raw));
+    } catch {
+      // Malformed payload — ignore.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Lazily fetch + highlight the current filing in the review.

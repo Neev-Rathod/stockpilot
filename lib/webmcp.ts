@@ -560,23 +560,35 @@ export const webMcpTools: WebMcpTool[] = [
             if (fm.includes("DEF")) return "Proxy statement";
             return form ?? "Filing";
           };
-          window.dispatchEvent(
-            new CustomEvent("stockpilot:sec-review", {
-              detail: {
-                symbol,
-                highlight,
-                analysis: riskAnalysis,
-                filings: latest10.map((f) => ({
-                  form: f.form ?? null,
-                  filedDate: f.filedDate ?? null,
-                  accessNumber: f.accessNumber ?? null,
-                  reportUrl: f.reportUrl ?? null,
-                  filingUrl: f.filingUrl ?? null,
-                  takeaway: takeawayFor(f.form),
-                })),
-              },
-            }),
-          );
+
+          const reviewDetail = {
+            symbol,
+            highlight,
+            analysis: riskAnalysis,
+            filings: latest10.map((f) => ({
+              form: f.form ?? null,
+              filedDate: f.filedDate ?? null,
+              accessNumber: f.accessNumber ?? null,
+              reportUrl: f.reportUrl ?? null,
+              filingUrl: f.filingUrl ?? null,
+              takeaway: takeawayFor(f.form),
+            })),
+          };
+
+          if (window.location.pathname === "/sec-filings") {
+            // Already on the page — fire the event directly; the mounted panel
+            // will receive it immediately.
+            window.dispatchEvent(
+              new CustomEvent("stockpilot:sec-review", { detail: reviewDetail }),
+            );
+          } else {
+            // Store for the panel to pick up on mount, then navigate.
+            sessionStorage.setItem(
+              "stockpilot:pending-sec-review",
+              JSON.stringify(reviewDetail),
+            );
+            window.location.href = "/sec-filings";
+          }
         }
       } catch {
         // Risk scoring / UI highlight is best-effort; never break the tool.
